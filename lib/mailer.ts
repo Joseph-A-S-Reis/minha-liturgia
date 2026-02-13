@@ -6,8 +6,23 @@ type MailPayload = {
   html: string;
 };
 
+type EnvKey =
+  | "AUTH_URL"
+  | "NEXTAUTH_URL"
+  | "SMTP_HOST"
+  | "SMTP_PORT"
+  | "SMTP_USER"
+  | "SMTP_PASS"
+  | "SMTP_SECURE"
+  | "EMAIL_FROM"
+  | "RESEND_API_KEY";
+
+function readEnv(key: EnvKey): string | undefined {
+  return process.env[key];
+}
+
 function getBaseUrl() {
-  return process.env.AUTH_URL ?? "http://localhost:3000";
+  return readEnv("AUTH_URL") ?? readEnv("NEXTAUTH_URL") ?? "http://127.0.0.1:3000";
 }
 
 export function buildAppUrl(path: string): string {
@@ -20,11 +35,11 @@ function parseBoolean(value: string | undefined): boolean {
 }
 
 async function sendWithSmtp(payload: MailPayload): Promise<boolean> {
-  const host = process.env.SMTP_HOST;
-  const portRaw = process.env.SMTP_PORT;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  const from = process.env.EMAIL_FROM;
+  const host = readEnv("SMTP_HOST");
+  const portRaw = readEnv("SMTP_PORT");
+  const user = readEnv("SMTP_USER");
+  const pass = readEnv("SMTP_PASS");
+  const from = readEnv("EMAIL_FROM");
 
   if (!host || !user || !pass || !from) {
     return false;
@@ -32,8 +47,8 @@ async function sendWithSmtp(payload: MailPayload): Promise<boolean> {
 
   const port = Number(portRaw ?? 587);
   const secure =
-    process.env.SMTP_SECURE !== undefined
-      ? parseBoolean(process.env.SMTP_SECURE)
+    readEnv("SMTP_SECURE") !== undefined
+      ? parseBoolean(readEnv("SMTP_SECURE"))
       : port === 465;
 
   const transporter = nodemailer.createTransport({
@@ -57,8 +72,8 @@ async function sendWithSmtp(payload: MailPayload): Promise<boolean> {
 }
 
 async function sendWithResend(payload: MailPayload): Promise<boolean> {
-  const resendApiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM;
+  const resendApiKey = readEnv("RESEND_API_KEY");
+  const from = readEnv("EMAIL_FROM");
 
   if (!resendApiKey || !from) {
     return false;

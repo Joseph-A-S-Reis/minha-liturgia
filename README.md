@@ -21,7 +21,7 @@ npm install
 npm run dev
 ```
 
-Abra `http://localhost:3000`.
+Abra a URL local exibida no terminal após iniciar o servidor.
 
 ## Banco de dados (Neon + Drizzle)
 
@@ -47,7 +47,7 @@ npm run db:push
   - Recuperação de senha: `/esqueci-senha` e `/redefinir-senha`
   - Lockout progressivo após tentativas falhas de login
 
-> Importante: `AUTH_URL` deve apontar para a URL da **aplicação** (ex.: `http://localhost:3000`), e **não** para a URL do Neon Auth/JWKS. Se `AUTH_URL` apontar para o domínio do Neon Auth, os redirecionamentos de login irão para lá e retornarão `404`.
+> Importante: `AUTH_URL` deve apontar para a URL da **aplicação** (ex.: `https://SEU-DOMINIO-DA-APP`), e **não** para a URL do Neon Auth/JWKS. Se `AUTH_URL` apontar para o domínio do Neon Auth, os redirecionamentos de login irão para lá e retornarão `404`.
 
 Para e-mails reais (verificação/redefinição), configure também no `.env`:
 
