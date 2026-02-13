@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { accounts, sessions, users, verificationTokens } from "@/db/schema";
 import { getUserLockInfo } from "@/lib/account-security";
+import { getAppBaseUrl } from "@/lib/app-url";
 import { verifyPassword } from "@/lib/password";
 
 const credentialsSchema = z.object({
@@ -95,6 +96,31 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
+    redirect: ({ url, baseUrl }) => {
+      const appBaseUrl = getAppBaseUrl();
+
+      if (url.startsWith("/")) {
+        return new URL(url, appBaseUrl).toString();
+      }
+
+      try {
+        const targetUrl = new URL(url);
+        const base = new URL(baseUrl);
+        const app = new URL(appBaseUrl);
+
+        if (targetUrl.origin === app.origin) {
+          return targetUrl.toString();
+        }
+
+        if (targetUrl.origin === base.origin) {
+          return new URL(`${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`, app).toString();
+        }
+
+        return appBaseUrl;
+      } catch {
+        return appBaseUrl;
+      }
+    },
     session: ({ session, token }) => {
       if (session.user && token.sub) {
         session.user.id = token.sub;

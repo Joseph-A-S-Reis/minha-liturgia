@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { buildAbsoluteAppUrl } from "@/lib/app-url";
 
 type MailPayload = {
   to: string;
@@ -23,16 +24,8 @@ function readEnv(parts: readonly string[]): string | undefined {
   return process.env[key];
 }
 
-function getBaseUrl() {
-  return (
-    readEnv(envName.authUrl) ??
-    readEnv(envName.nextAuthUrl) ??
-    "http://127.0.0.1:3000"
-  );
-}
-
 export function buildAppUrl(path: string): string {
-  return new URL(path, getBaseUrl()).toString();
+  return buildAbsoluteAppUrl(path);
 }
 
 function parseBoolean(value: string | undefined): boolean {
