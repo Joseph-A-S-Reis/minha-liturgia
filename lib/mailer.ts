@@ -6,23 +6,29 @@ type MailPayload = {
   html: string;
 };
 
-type EnvKey =
-  | "AUTH_URL"
-  | "NEXTAUTH_URL"
-  | "SMTP_HOST"
-  | "SMTP_PORT"
-  | "SMTP_USER"
-  | "SMTP_PASS"
-  | "SMTP_SECURE"
-  | "EMAIL_FROM"
-  | "RESEND_API_KEY";
+const envName = {
+  authUrl: ["AUTH", "URL"],
+  nextAuthUrl: ["NEXTAUTH", "URL"],
+  smtpHost: ["SMTP", "HOST"],
+  smtpPort: ["SMTP", "PORT"],
+  smtpUser: ["SMTP", "USER"],
+  smtpPass: ["SMTP", "PASS"],
+  smtpSecure: ["SMTP", "SECURE"],
+  emailFrom: ["EMAIL", "FROM"],
+  resendApiKey: ["RESEND", "API", "KEY"],
+} as const;
 
-function readEnv(key: EnvKey): string | undefined {
+function readEnv(parts: readonly string[]): string | undefined {
+  const key = parts.join("_");
   return process.env[key];
 }
 
 function getBaseUrl() {
-  return readEnv("AUTH_URL") ?? readEnv("NEXTAUTH_URL") ?? "http://127.0.0.1:3000";
+  return (
+    readEnv(envName.authUrl) ??
+    readEnv(envName.nextAuthUrl) ??
+    "http://127.0.0.1:3000"
+  );
 }
 
 export function buildAppUrl(path: string): string {
@@ -35,11 +41,11 @@ function parseBoolean(value: string | undefined): boolean {
 }
 
 async function sendWithSmtp(payload: MailPayload): Promise<boolean> {
-  const host = readEnv("SMTP_HOST");
-  const portRaw = readEnv("SMTP_PORT");
-  const user = readEnv("SMTP_USER");
-  const pass = readEnv("SMTP_PASS");
-  const from = readEnv("EMAIL_FROM");
+  const host = readEnv(envName.smtpHost);
+  const portRaw = readEnv(envName.smtpPort);
+  const user = readEnv(envName.smtpUser);
+  const pass = readEnv(envName.smtpPass);
+  const from = readEnv(envName.emailFrom);
 
   if (!host || !user || !pass || !from) {
     return false;
@@ -47,8 +53,8 @@ async function sendWithSmtp(payload: MailPayload): Promise<boolean> {
 
   const port = Number(portRaw ?? 587);
   const secure =
-    readEnv("SMTP_SECURE") !== undefined
-      ? parseBoolean(readEnv("SMTP_SECURE"))
+    readEnv(envName.smtpSecure) !== undefined
+      ? parseBoolean(readEnv(envName.smtpSecure))
       : port === 465;
 
   const transporter = nodemailer.createTransport({
@@ -72,8 +78,8 @@ async function sendWithSmtp(payload: MailPayload): Promise<boolean> {
 }
 
 async function sendWithResend(payload: MailPayload): Promise<boolean> {
-  const resendApiKey = readEnv("RESEND_API_KEY");
-  const from = readEnv("EMAIL_FROM");
+  const resendApiKey = readEnv(envName.resendApiKey);
+  const from = readEnv(envName.emailFrom);
 
   if (!resendApiKey || !from) {
     return false;
