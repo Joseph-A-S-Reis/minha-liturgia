@@ -71,6 +71,49 @@ Se usar Gmail SMTP, prefira senha de app em `SMTP_PASS` (não a senha normal da 
 
 Ao acessar `/diario` autenticado, o app detecta entradas antigas no `localStorage` e oferece um botão para migrar tudo para o Neon.
 
+## MarIA (assistente IA via OpenRouter)
+
+A MarIA está disponível na página `/inicio` **somente para usuários autenticados**.
+
+Modos disponíveis:
+
+- `Conselheira`: aconselhamento amigável com apoio bíblico
+- `Teóloga`: foco em teologia católica e contexto histórico
+- `Educadora`: planos/guias de estudo com base catequética
+
+### Variáveis de ambiente
+
+Configure no `.env` (local) e no provedor de deploy (Netlify):
+
+- `OPENROUTER_API_KEY`
+- `OPENROUTER_MODEL` (ex.: `liquid/lfm-2.5-1.2b-thinking:free`)
+
+### Como funciona
+
+- Endpoint server-side: `POST /api/maria/chat`
+- A chave da OpenRouter fica apenas no servidor.
+- O usuário pode salvar a resposta da MarIA:
+  - no **Diário privado**;
+  - como **nota de versículo** (com detecção de referência bíblica, como `João 3:16`).
+
+### Políticas de uso da MarIA
+
+- A MarIA atende **somente** no contexto católico dos modos:
+  - `Conselheira`
+  - `Teóloga`
+  - `Educadora`
+- Solicitações fora do escopo (ex.: programação, apostas, marketing, etc.) são recusadas com redirecionamento para tema católico.
+- Conteúdo adulto/sexual explícito é bloqueado.
+
+### Limite de uso
+
+- Há um limite básico por usuário para evitar abuso/custos excessivos:
+  - 20 requisições por hora (memória do processo).
+
+## Destaque do Dia (internet + fontes oficiais)
+
+Na `/inicio`, o bloco **Destaque do dia** passa a buscar novidades/curiosidades da Igreja em feeds oficiais católicos (ex.: Vatican News e CNBB), com cache e fallback para o calendário litúrgico local quando necessário.
+
 ## Estrutura atual
 
 - `app/`: páginas principais (onboarding, início, bíblia, calendário, diário)
