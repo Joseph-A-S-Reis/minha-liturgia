@@ -71,6 +71,34 @@ Se usar Gmail SMTP, prefira senha de app em `SMTP_PASS` (não a senha normal da 
 
 Ao acessar `/diario` autenticado, o app detecta entradas antigas no `localStorage` e oferece um botão para migrar tudo para o Neon.
 
+## Persistência imediata e segurança de escrita (CRUD)
+
+O app agora opera em modo **DB-first** para mutações:
+
+- Criação/edição/exclusão tentam persistir **imediatamente no banco**.
+- Ações críticas usam **idempotência** para evitar duplicidade por clique duplo, retry de rede ou reenvio acidental.
+- Fluxos de token de conta (verificação/redefinição) usam operações **atômicas em transação**.
+
+### Fallback local (contingência)
+
+Quando a escrita no banco falha temporariamente (rede/indisponibilidade):
+
+- Diário e notas salvam a operação em fila local (`localStorage`) apenas como contingência.
+- O app tenta sincronizar automaticamente ao recuperar foco/visibilidade e permite sincronização manual.
+- Após sucesso no banco, a pendência local é removida.
+
+> O banco continua sendo a fonte canônica de verdade; o `localStorage` é apenas uma fila temporária de recuperação.
+
+### Aplicar migração de idempotência
+
+Após atualizar o código, rode:
+
+```bash
+npm run db:push
+```
+
+Essa etapa cria a tabela `mutation_idempotency`, usada para deduplicar mutações repetidas em janelas curtas.
+
 ## MarIA (assistente IA via OpenRouter)
 
 A MarIA está disponível na página `/inicio` **somente para usuários autenticados**.

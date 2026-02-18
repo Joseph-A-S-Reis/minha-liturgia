@@ -187,3 +187,28 @@ export const verseNotes = pgTable(
     ),
   }),
 );
+
+export const mutationIdempotency = pgTable(
+  "mutation_idempotency",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    actionType: varchar("action_type", { length: 80 }).notNull(),
+    actionKey: text("action_key").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
+  },
+  (table) => ({
+    userActionKeyUnique: uniqueIndex("mutation_idempotency_user_action_key_unique").on(
+      table.userId,
+      table.actionType,
+      table.actionKey,
+    ),
+    userExpiresIdx: index("mutation_idempotency_user_expires_idx").on(
+      table.userId,
+      table.expiresAt,
+    ),
+  }),
+);

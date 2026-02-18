@@ -14,6 +14,22 @@ import {
 import { buildAppUrl, sendEmail } from "@/lib/mailer";
 import { hashPassword } from "@/lib/password";
 
+function isUniqueEmailViolation(error: unknown) {
+  if (!(error instanceof Error)) return false;
+
+  const asRecord = error as {
+    cause?: { code?: string; constraint?: string; message?: string };
+    message?: string;
+  };
+
+  if (asRecord.cause?.code === "23505") {
+    return true;
+  }
+
+  const combined = `${asRecord.message ?? ""} ${asRecord.cause?.message ?? ""}`;
+  return /users_email_unique/i.test(combined);
+}
+
 const loginSchema = z.object({
   email: z.string().email("Informe um e-mail válido."),
   password: z.string().min(6, "A senha precisa ter no mínimo 6 caracteres."),
@@ -119,30 +135,37 @@ export async function registerAction(
     return { success: false, message: "As senhas não conferem." };
   }
 
-  const [existingUser] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, parsed.data.email))
-    .limit(1);
-
-  if (existingUser) {
-    return { success: false, message: "Já existe conta com este e-mail." };
-  }
-
   const passwordHash = await hashPassword(parsed.data.password);
 
-  await db.insert(users).values({
-    id: crypto.randomUUID(),
-    name: parsed.data.name,
-    email: parsed.data.email,
-    passwordHash,
-  });
+  let createdUser:
+    | {
+        id: string;
+        email: string;
+        name: string | null;
+      }
+    | undefined;
 
-  const [createdUser] = await db
-    .select({ id: users.id, email: users.email, name: users.name })
-    .from(users)
-    .where(eq(users.email, parsed.data.email))
-    .limit(1);
+  try {
+    [createdUser] = await db
+      .insert(users)
+      .values({
+        id: crypto.randomUUID(),
+        name: parsed.data.name,
+        email: parsed.data.email,
+        passwordHash,
+      })
+      .returning({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+      });
+  } catch (error) {
+    if (isUniqueEmailViolation(error)) {
+      return { success: false, message: "Já existe conta com este e-mail." };
+    }
+
+    throw error;
+  }
 
   if (createdUser) {
     const token = await createEmailVerificationToken({

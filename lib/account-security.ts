@@ -31,43 +31,44 @@ export async function createEmailVerificationToken(params: {
   const token = randomToken();
   const identifierPrefix = `verify:${params.userId}:`;
 
-  await db
-    .delete(verificationTokens)
-    .where(like(verificationTokens.identifier, `${identifierPrefix}%`));
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(verificationTokens)
+      .where(like(verificationTokens.identifier, `${identifierPrefix}%`));
 
-  await db.insert(verificationTokens).values({
-    identifier: `${identifierPrefix}${params.email}`,
-    token,
-    expires: getExpiry(EMAIL_VERIFY_TTL_MINUTES),
+    await tx.insert(verificationTokens).values({
+      identifier: `${identifierPrefix}${params.email}`,
+      token,
+      expires: getExpiry(EMAIL_VERIFY_TTL_MINUTES),
+    });
   });
 
   return token;
 }
 
 export async function consumeEmailVerificationToken(token: string) {
-  const [record] = await db
-    .select()
-    .from(verificationTokens)
-    .where(and(eq(verificationTokens.token, token), gt(verificationTokens.expires, new Date())))
-    .limit(1);
+  return db.transaction(async (tx) => {
+    const [record] = await tx
+      .delete(verificationTokens)
+      .where(and(eq(verificationTokens.token, token), gt(verificationTokens.expires, new Date())))
+      .returning({ identifier: verificationTokens.identifier });
 
-  if (!record || !record.identifier.startsWith("verify:")) {
-    return { success: false as const };
-  }
+    if (!record || !record.identifier.startsWith("verify:")) {
+      return { success: false as const };
+    }
 
-  const [, userId] = record.identifier.split(":");
-  if (!userId) {
-    return { success: false as const };
-  }
+    const [, userId] = record.identifier.split(":");
+    if (!userId) {
+      return { success: false as const };
+    }
 
-  await db
-    .update(users)
-    .set({ emailVerified: new Date() })
-    .where(eq(users.id, userId));
+    await tx
+      .update(users)
+      .set({ emailVerified: new Date() })
+      .where(eq(users.id, userId));
 
-  await db.delete(verificationTokens).where(eq(verificationTokens.token, token));
-
-  return { success: true as const };
+    return { success: true as const };
+  });
 }
 
 export async function createPasswordResetToken(params: {
@@ -77,14 +78,16 @@ export async function createPasswordResetToken(params: {
   const token = randomToken();
   const identifierPrefix = `reset:${params.userId}:`;
 
-  await db
-    .delete(verificationTokens)
-    .where(like(verificationTokens.identifier, `${identifierPrefix}%`));
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(verificationTokens)
+      .where(like(verificationTokens.identifier, `${identifierPrefix}%`));
 
-  await db.insert(verificationTokens).values({
-    identifier: `${identifierPrefix}${params.email}`,
-    token,
-    expires: getExpiry(PASSWORD_RESET_TTL_MINUTES),
+    await tx.insert(verificationTokens).values({
+      identifier: `${identifierPrefix}${params.email}`,
+      token,
+      expires: getExpiry(PASSWORD_RESET_TTL_MINUTES),
+    });
   });
 
   return token;
@@ -94,31 +97,35 @@ export async function consumePasswordResetToken(params: {
   token: string;
   newPasswordHash: string;
 }) {
-  const [record] = await db
-    .select()
-    .from(verificationTokens)
-    .where(and(eq(verificationTokens.token, params.token), gt(verificationTokens.expires, new Date())))
-    .limit(1);
+  return db.transaction(async (tx) => {
+    const [record] = await tx
+      .delete(verificationTokens)
+      .where(
+        and(
+          eq(verificationTokens.token, params.token),
+          gt(verificationTokens.expires, new Date()),
+        ),
+      )
+      .returning({ identifier: verificationTokens.identifier });
 
-  if (!record || !record.identifier.startsWith("reset:")) {
-    return { success: false as const };
-  }
+    if (!record || !record.identifier.startsWith("reset:")) {
+      return { success: false as const };
+    }
 
-  const [, userId] = record.identifier.split(":");
-  if (!userId) {
-    return { success: false as const };
-  }
+    const [, userId] = record.identifier.split(":");
+    if (!userId) {
+      return { success: false as const };
+    }
 
-  await db
-    .update(users)
-    .set({
-      passwordHash: params.newPasswordHash,
-      failedLoginAttempts: 0,
-      lockedUntil: null,
-    })
-    .where(eq(users.id, userId));
+    await tx
+      .update(users)
+      .set({
+        passwordHash: params.newPasswordHash,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      })
+      .where(eq(users.id, userId));
 
-  await db.delete(verificationTokens).where(eq(verificationTokens.token, params.token));
-
-  return { success: true as const };
+    return { success: true as const };
+  });
 }

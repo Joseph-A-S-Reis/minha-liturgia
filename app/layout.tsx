@@ -2,29 +2,45 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "./components/sidebar";
 import { EventsPanel } from "./components/events-panel";
+import { MobileTabbar } from "./components/mobile-tabbar";
+import { auth } from "@/auth";
 
 export const metadata: Metadata = {
   title: "Minha Liturgia",
   description: "Aplicação web para vida litúrgica, diário espiritual e leitura bíblica.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await auth();
+
   return (
     <html lang="pt-BR">
       <body className="antialiased min-h-screen bg-[#f0f9ff] text-[#003366]">
+        <a
+          href="#conteudo-principal"
+          className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-60 focus:rounded-lg focus:bg-white focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-[#003366] focus:shadow"
+        >
+          Pular para conteúdo principal
+        </a>
+
         {/* Navigation Sidebar (Fixed Left) */}
-        <Sidebar />
+        <Sidebar isAuthenticated={Boolean(session?.user)} />
 
         {/* Main Content Area */}
-        {/* Adds margin left to accommodate sidebar */}
-        {/* Adds margin right on large screens to accommodate events panel */}
-        <main className="ml-64 xl:mr-72 min-h-screen p-8 transition-all duration-300">
+        {/* On mobile, no left margin and extra bottom space for tab navigation */}
+        {/* On md+, reserve left space for sidebar and right space on xl for events panel */}
+        <div
+          id="conteudo-principal"
+          className="min-h-screen p-4 pb-28 pt-6 transition-all duration-300 sm:p-6 sm:pb-28 md:ml-64 md:min-h-screen md:p-8 md:pb-8 xl:mr-72"
+        >
           {children}
-        </main>
+        </div>
+
+        <MobileTabbar />
 
         {/* Right Panel - Calendar (Fixed Right) */}
         <EventsPanel />

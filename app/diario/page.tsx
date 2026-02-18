@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { deleteDiaryEntryAction, getUserDiaryEntries } from "./actions";
-import { createDiaryEntryAction } from "./actions";
 import { LocalDiaryMigration } from "./local-migration";
-import { PenIcon, PlusCircleIcon, TrashIcon } from "@/app/components/icons";
+import { DiaryEntryForm } from "./diary-entry-form";
+import { PenIcon, TrashIcon } from "@/app/components/icons";
 
 export default async function DiarioPage() {
   const session = await auth();
@@ -26,25 +26,7 @@ export default async function DiarioPage() {
       <LocalDiaryMigration />
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <form action={createDiaryEntryAction} className="space-y-3">
-          <label className="block text-sm font-medium text-zinc-700" htmlFor="content">
-            Nova anotação
-          </label>
-          <textarea
-            id="content"
-            name="content"
-            required
-            className="h-36 w-full rounded-xl border border-zinc-300 px-3 py-2 text-sm outline-none ring-emerald-500 transition focus:ring"
-            placeholder="Ex.: Hoje meditei sobre..."
-          />
-          <button
-            type="submit"
-            className="inline-flex items-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
-          >
-            <PlusCircleIcon className="mr-2 size-4" />
-            Salvar no diário
-          </button>
-        </form>
+        <DiaryEntryForm />
       </section>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">

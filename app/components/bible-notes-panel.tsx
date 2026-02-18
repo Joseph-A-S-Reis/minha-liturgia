@@ -49,6 +49,43 @@ type MentionItem = {
 
 type SaveState = "idle" | "typing" | "saving" | "saved" | "error";
 
+type PendingNoteMutation =
+  | {
+      id: string;
+      type: "create";
+      payload: {
+        versionId: string;
+        bookId: string;
+        chapter: number;
+        verse: number;
+        contentHtml: string;
+        color: NoteColor;
+      };
+    }
+  | {
+      id: string;
+      type: "update";
+      payload: {
+        id: string;
+        versionId: string;
+        bookId: string;
+        chapter: number;
+        contentHtml?: string;
+        color?: NoteColor;
+        isPinned?: boolean;
+      };
+    }
+  | {
+      id: string;
+      type: "delete";
+      payload: {
+        id: string;
+        versionId: string;
+        bookId: string;
+        chapter: number;
+      };
+    };
+
 type NoteListMode = "all" | "pinned";
 
 type NoteSortMode = "pinned-recent" | "recent" | "oldest" | "verse";
@@ -62,6 +99,39 @@ const colorClasses: Record<NoteColor, string> = {
   rose: "border-rose-300 bg-rose-50 text-rose-950",
   violet: "border-violet-300 bg-violet-50 text-violet-950",
 };
+
+const NOTE_MUTATION_FALLBACK_KEY = "minha-liturgia:notes:pending-writes";
+
+function readPendingNoteMutations(): PendingNoteMutation[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  const raw = window.localStorage.getItem(NOTE_MUTATION_FALLBACK_KEY);
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as PendingNoteMutation[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePendingNoteMutations(queue: PendingNoteMutation[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (queue.length === 0) {
+    window.localStorage.removeItem(NOTE_MUTATION_FALLBACK_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(NOTE_MUTATION_FALLBACK_KEY, JSON.stringify(queue));
+}
 
 function getVerseFromHash() {
   if (typeof window === "undefined") return null;
@@ -258,6 +328,7 @@ export function BibleNotesPanel({
   const [noteQuery, setNoteQuery] = useState("");
   const [visibleNoteLimit, setVisibleNoteLimit] = useState(20);
   const [hasExternalConflict, setHasExternalConflict] = useState(false);
+  const [pendingMutationCount, setPendingMutationCount] = useState(0);
   const [isPending, startTransition] = useTransition();
   const hasVerses = verses.length > 0;
   const autosaveTimerRef = useRef<number | null>(null);
@@ -490,6 +561,61 @@ export function BibleNotesPanel({
     setNotes((current) => current.filter((item) => item.id !== id));
   }, []);
 
+  const enqueuePendingMutation = useCallback((mutation: PendingNoteMutation) => {
+    const current = readPendingNoteMutations();
+    const next = [mutation, ...current.filter((item) => item.id !== mutation.id)].slice(0, 200);
+    writePendingNoteMutations(next);
+    setPendingMutationCount(next.length);
+  }, []);
+
+  const flushPendingMutations = useCallback(async () => {
+    const queue = readPendingNoteMutations();
+    if (queue.length === 0) {
+      setPendingMutationCount(0);
+      return { processed: 0, remaining: 0 };
+    }
+
+    const remaining: PendingNoteMutation[] = [];
+    let processed = 0;
+
+    for (const mutation of [...queue].reverse()) {
+      try {
+        if (mutation.type === "create") {
+          const created = await createVerseNoteAction({
+            ...mutation.payload,
+            idempotencyKey: mutation.id,
+          });
+          upsertNoteLocally(created);
+        } else if (mutation.type === "update") {
+          const updated = await updateVerseNoteAction({
+            ...mutation.payload,
+            idempotencyKey: mutation.id,
+          });
+          if (updated) {
+            upsertNoteLocally(updated);
+          }
+        } else {
+          const deleted = await deleteVerseNoteAction({
+            ...mutation.payload,
+            idempotencyKey: mutation.id,
+          });
+          if (deleted.ok) {
+            removeNoteLocally(mutation.payload.id);
+          }
+        }
+
+        processed += 1;
+      } catch {
+        remaining.push(mutation);
+      }
+    }
+
+    writePendingNoteMutations(remaining);
+    setPendingMutationCount(remaining.length);
+
+    return { processed, remaining: remaining.length };
+  }, [removeNoteLocally, upsertNoteLocally]);
+
   const detectExternalConflict = useCallback(
     (nextNotes: VerseNoteRecord[]) => {
       if (!editingNoteId || !editor) {
@@ -581,6 +707,35 @@ export function BibleNotesPanel({
     };
   }, [isAuthenticated, refreshNotes]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    setPendingMutationCount(readPendingNoteMutations().length);
+
+    const retry = () => {
+      void flushPendingMutations().catch(() => {
+        // Mantém pendências locais para a próxima tentativa.
+      });
+    };
+
+    retry();
+
+    const onFocus = () => retry();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        retry();
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [flushPendingMutations, isAuthenticated]);
+
   const persistEditingNote = useCallback(
     async (trigger: "manual" | "autosave") => {
       if (!editor || !editingNoteId) return false;
@@ -607,6 +762,7 @@ export function BibleNotesPanel({
 
       setSaveState("saving");
       setError(null);
+      const mutationId = crypto.randomUUID();
 
       try {
         const updated = await updateVerseNoteAction({
@@ -616,6 +772,7 @@ export function BibleNotesPanel({
           chapter,
           contentHtml: html,
           color: draftColor,
+          idempotencyKey: mutationId,
         });
 
         if (!updated) {
@@ -630,8 +787,24 @@ export function BibleNotesPanel({
         setSaveState("saved");
         return true;
       } catch (cause) {
+        enqueuePendingMutation({
+          id: mutationId,
+          type: "update",
+          payload: {
+            id: editingNoteId,
+            versionId,
+            bookId,
+            chapter,
+            contentHtml: html,
+            color: draftColor,
+          },
+        });
         setSaveState("error");
-        setError(cause instanceof Error ? cause.message : "Não foi possível salvar a nota.");
+        setError(
+          cause instanceof Error
+            ? `${cause.message} (Rascunho salvo localmente para sincronização automática.)`
+            : "Não foi possível salvar a nota. Rascunho salvo localmente para sincronização automática.",
+        );
         return false;
       }
     },
@@ -639,6 +812,7 @@ export function BibleNotesPanel({
       bookId,
       chapter,
       draftColor,
+      enqueuePendingMutation,
       editingNoteId,
       editor,
       upsertNoteLocally,
@@ -668,6 +842,8 @@ export function BibleNotesPanel({
     clearAutosaveTimer();
 
     startTransition(async () => {
+      const createMutationId = crypto.randomUUID();
+
       try {
         if (editingNoteId) {
           await persistEditingNote("manual");
@@ -691,12 +867,34 @@ export function BibleNotesPanel({
           verse: selectedVerse,
           contentHtml: html,
           color: draftColor,
+          idempotencyKey: createMutationId,
         });
 
         upsertNoteLocally(created);
         resetComposer();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Não foi possível salvar a nota.");
+        const html = editor?.getHTML() ?? "";
+
+        if (html.trim()) {
+          enqueuePendingMutation({
+            id: createMutationId,
+            type: "create",
+            payload: {
+              versionId,
+              bookId,
+              chapter,
+              verse: selectedVerse,
+              contentHtml: html,
+              color: draftColor,
+            },
+          });
+        }
+
+        setError(
+          cause instanceof Error
+            ? `${cause.message} (Nota salva localmente e será reenviada automaticamente.)`
+            : "Não foi possível salvar a nota. Guardamos localmente para reenviar automaticamente.",
+        );
       }
     });
   }, [
@@ -704,6 +902,7 @@ export function BibleNotesPanel({
     chapter,
     clearAutosaveTimer,
     draftColor,
+    enqueuePendingMutation,
     editingNoteId,
     editor,
     hasVerses,
@@ -746,6 +945,8 @@ export function BibleNotesPanel({
 
   const togglePin = (note: VerseNoteRecord) => {
     startTransition(async () => {
+      const mutationId = crypto.randomUUID();
+
       try {
         const updated = await updateVerseNoteAction({
           id: note.id,
@@ -753,6 +954,7 @@ export function BibleNotesPanel({
           bookId,
           chapter,
           isPinned: !note.isPinned,
+          idempotencyKey: mutationId,
         });
 
         if (updated) {
@@ -763,19 +965,38 @@ export function BibleNotesPanel({
           }
         }
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Falha ao fixar nota.");
+        enqueuePendingMutation({
+          id: mutationId,
+          type: "update",
+          payload: {
+            id: note.id,
+            versionId,
+            bookId,
+            chapter,
+            isPinned: !note.isPinned,
+          },
+        });
+
+        setError(
+          cause instanceof Error
+            ? `${cause.message} (Mudança salva localmente para sincronização.)`
+            : "Falha ao fixar nota. Mudança salva localmente para sincronização.",
+        );
       }
     });
   };
 
   const removeNote = (id: string) => {
     startTransition(async () => {
+      const mutationId = crypto.randomUUID();
+
       try {
         const result = await deleteVerseNoteAction({
           id,
           versionId,
           bookId,
           chapter,
+          idempotencyKey: mutationId,
         });
 
         if (result.ok) {
@@ -786,7 +1007,22 @@ export function BibleNotesPanel({
           resetComposer();
         }
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Falha ao remover nota.");
+        enqueuePendingMutation({
+          id: mutationId,
+          type: "delete",
+          payload: {
+            id,
+            versionId,
+            bookId,
+            chapter,
+          },
+        });
+
+        setError(
+          cause instanceof Error
+            ? `${cause.message} (Exclusão será tentada novamente automaticamente.)`
+            : "Falha ao remover nota. A exclusão será tentada novamente automaticamente.",
+        );
       }
     });
   };
@@ -1027,6 +1263,12 @@ export function BibleNotesPanel({
                 }`}
               >
                 {saveStateLabel}
+              </p>
+            ) : null}
+
+            {pendingMutationCount > 0 ? (
+              <p className="text-xs font-semibold text-amber-700">
+                {pendingMutationCount} alteração(ões) em fila local aguardando sincronização.
               </p>
             ) : null}
 

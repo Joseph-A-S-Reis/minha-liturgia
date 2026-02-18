@@ -56,6 +56,15 @@ export function CalendarIcon(props: IconProps) {
   );
 }
 
+export function UserIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </BaseIcon>
+  );
+}
+
 export function LoginIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>

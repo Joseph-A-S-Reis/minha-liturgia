@@ -74,12 +74,25 @@ function normalizeUrl(input: string) {
   }
 }
 
-function truncateSummary(input: string, maxChars = 280) {
+function truncateSummary(input: string, maxChars = 460) {
+  const normalized = input.replace(/\s+/g, " ").trim();
+
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  const sliced = normalized.slice(0, maxChars);
+  const lastWordBoundary = sliced.lastIndexOf(" ");
+
+  if (lastWordBoundary > Math.floor(maxChars * 0.7)) {
+    return `${sliced.slice(0, lastWordBoundary).trimEnd()}…`;
+  }
+
   if (input.length <= maxChars) {
     return input;
   }
 
-  return `${input.slice(0, maxChars).trimEnd()}…`;
+  return `${sliced.trimEnd()}…`;
 }
 
 function extractImageUrl(chunk: string) {

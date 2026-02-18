@@ -15,6 +15,13 @@
       "when": 1770926110000,
       "tag": "0001_diligent_silver_samurai",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1771420820000,
+      "tag": "0002_solid_idempotency_guard",
+      "breakpoints": true
     }
   ]
 }

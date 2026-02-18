@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { journalEntries } from "@/db/schema";
 import { createVerseNoteAction } from "@/app/biblia/note-actions";
 import { extractBibleReferences } from "@/lib/bible-reference";
+import { acquireIdempotencyLock, createIdempotencyKey } from "@/lib/idempotency";
 
 type SaveToDiaryInput = {
   modeLabel: string;
@@ -48,6 +49,23 @@ export async function saveMariaResponseToDiaryAction(input: SaveToDiaryInput) {
     parsed.answer,
   ].join("\n");
 
+  const actionKey = createIdempotencyKey("maria:save-diary", {
+    modeLabel: parsed.modeLabel,
+    question: parsed.question,
+    answer: parsed.answer,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "maria:save-diary",
+    actionKey,
+    ttlSeconds: 180,
+  });
+
+  if (!canProcess) {
+    return { ok: true as const };
+  }
+
   await db.insert(journalEntries).values({
     id: crypto.randomUUID(),
     userId,
@@ -81,6 +99,11 @@ export async function saveMariaResponseToVerseAction(input: {
     verse: first.verse,
     color: "amber",
     contentHtml: `<p>${parsed.answer}</p>`,
+    idempotencyKey: createIdempotencyKey("maria:save-verse", {
+      answer: parsed.answer,
+      versionId: parsed.versionId,
+      reference: first.label,
+    }).slice(0, 64),
   });
 
   return {

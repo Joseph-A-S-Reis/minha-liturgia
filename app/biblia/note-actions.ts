@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { linkBibleReferencesInHtml } from "@/lib/bible-reference";
+import { acquireIdempotencyLock, createIdempotencyKey } from "@/lib/idempotency";
 import { NOTE_COLORS, type NoteColor } from "@/lib/verse-notes-shared";
 import {
   createVerseNote,
@@ -25,6 +26,7 @@ const createNoteSchema = baseRefSchema.extend({
   verse: z.number().int().positive(),
   contentHtml: z.string().min(1).max(50_000),
   color: noteColorSchema.default("amber"),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
 });
 
 const updateNoteSchema = baseRefSchema.extend({
@@ -32,10 +34,12 @@ const updateNoteSchema = baseRefSchema.extend({
   contentHtml: z.string().min(1).max(50_000).optional(),
   color: noteColorSchema.optional(),
   isPinned: z.boolean().optional(),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
 });
 
 const deleteNoteSchema = baseRefSchema.extend({
   id: z.string().min(1),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
 });
 
 function chapterPath(versionId: string, bookId: string, chapter: number) {
@@ -91,9 +95,50 @@ export async function createVerseNoteAction(input: {
   verse: number;
   contentHtml: string;
   color: NoteColor;
+  idempotencyKey?: string;
 }) {
   const userId = await requireUserId();
   const parsed = createNoteSchema.parse(input);
+  const sanitizedContent = sanitizeEditorHtml(parsed.contentHtml, parsed.versionId);
+
+  const actionKey = createIdempotencyKey("verse-note:create", {
+    versionId: parsed.versionId,
+    bookId: parsed.bookId,
+    chapter: parsed.chapter,
+    verse: parsed.verse,
+    color: parsed.color,
+    contentHtml: sanitizedContent,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "verse-note:create",
+    actionKey,
+    ttlSeconds: 180,
+  });
+
+  if (!canProcess) {
+    const existingNotes = await getVerseNotesForChapter({
+      userId,
+      versionId: parsed.versionId,
+      bookId: parsed.bookId,
+      chapter: parsed.chapter,
+    });
+
+    const existing = existingNotes.find(
+      (note) =>
+        note.verse === parsed.verse &&
+        note.color === parsed.color &&
+        note.contentHtml === sanitizedContent,
+    );
+
+    if (existing) {
+      return existing;
+    }
+
+    throw new Error("Ação duplicada detectada. Aguarde alguns segundos e tente novamente.");
+  }
 
   const created = await createVerseNote(
     {
@@ -104,7 +149,7 @@ export async function createVerseNoteAction(input: {
       verse: parsed.verse,
     },
     {
-      contentHtml: sanitizeEditorHtml(parsed.contentHtml, parsed.versionId),
+      contentHtml: sanitizedContent,
       color: parsed.color,
     },
   );
@@ -121,15 +166,47 @@ export async function updateVerseNoteAction(input: {
   contentHtml?: string;
   color?: NoteColor;
   isPinned?: boolean;
+  idempotencyKey?: string;
 }) {
   const userId = await requireUserId();
   const parsed = updateNoteSchema.parse(input);
 
+  const sanitizedContent =
+    parsed.contentHtml !== undefined
+      ? sanitizeEditorHtml(parsed.contentHtml, parsed.versionId)
+      : undefined;
+
+  const actionKey = createIdempotencyKey("verse-note:update", {
+    id: parsed.id,
+    versionId: parsed.versionId,
+    bookId: parsed.bookId,
+    chapter: parsed.chapter,
+    contentHtml: sanitizedContent ?? null,
+    color: parsed.color ?? null,
+    isPinned: parsed.isPinned ?? null,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "verse-note:update",
+    actionKey,
+    ttlSeconds: 180,
+  });
+
+  if (!canProcess) {
+    const existingNotes = await getVerseNotesForChapter({
+      userId,
+      versionId: parsed.versionId,
+      bookId: parsed.bookId,
+      chapter: parsed.chapter,
+    });
+
+    return existingNotes.find((note) => note.id === parsed.id) ?? null;
+  }
+
   const updated = await updateVerseNote(userId, parsed.id, {
-    contentHtml:
-      parsed.contentHtml !== undefined
-        ? sanitizeEditorHtml(parsed.contentHtml, parsed.versionId)
-        : undefined,
+    contentHtml: sanitizedContent,
     color: parsed.color,
     isPinned: parsed.isPinned,
   });
@@ -143,9 +220,29 @@ export async function deleteVerseNoteAction(input: {
   versionId: string;
   bookId: string;
   chapter: number;
+  idempotencyKey?: string;
 }) {
   const userId = await requireUserId();
   const parsed = deleteNoteSchema.parse(input);
+
+  const actionKey = createIdempotencyKey("verse-note:delete", {
+    id: parsed.id,
+    versionId: parsed.versionId,
+    bookId: parsed.bookId,
+    chapter: parsed.chapter,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "verse-note:delete",
+    actionKey,
+    ttlSeconds: 180,
+  });
+
+  if (!canProcess) {
+    return { ok: true };
+  }
 
   const ok = await deleteVerseNote(userId, parsed.id);
   revalidatePath(chapterPath(parsed.versionId, parsed.bookId, parsed.chapter));
