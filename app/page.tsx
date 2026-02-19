@@ -1,6 +1,9 @@
 import { BookIcon, CalendarIcon, HomeIcon, LoginIcon, PenIcon } from "./components/icons";
+import { auth } from "@/auth";
 
-export default function Home() {
+export default async function Home() {
+  const session = await auth();
+
   return (
     <main className="flex min-h-screen w-full flex-col justify-center gap-9 px-6 py-14 sm:gap-10 sm:px-10">
       <section className="space-y-5">
@@ -53,13 +56,15 @@ export default function Home() {
           <CalendarIcon className="size-4" />
           Ver calendário de hoje
         </a>
-        <a
-          href="/entrar"
-          className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 px-5 py-3 font-semibold text-zinc-700 transition hover:bg-zinc-100"
-        >
-          <LoginIcon className="size-4" />
-          Entrar na conta
-        </a>
+        {!session?.user ? (
+          <a
+            href="/entrar"
+            className="inline-flex items-center gap-2 rounded-xl border border-zinc-300 px-5 py-3 font-semibold text-zinc-700 transition hover:bg-zinc-100"
+          >
+            <LoginIcon className="size-4" />
+            Entrar na conta
+          </a>
+        ) : null}
       </div>
     </main>
   );

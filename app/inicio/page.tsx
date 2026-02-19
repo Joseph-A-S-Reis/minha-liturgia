@@ -125,7 +125,7 @@ export default async function InicioPage() {
               rel="noreferrer"
               aria-label={`Abrir matéria completa: ${churchHighlight.title}`}
               title="Abrir matéria completa"
-              className="group relative block min-h-56 border-t border-emerald-200 md:min-h-full md:border-l md:border-t-0"
+              className="group relative block min-h-56 border-t border-emerald-200 md:min-h-72 md:border-l md:border-t-0"
             >
               <Image
                 src={churchHighlight.imageUrl}
@@ -136,7 +136,7 @@ export default async function InicioPage() {
               <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/45 to-transparent" />
             </a>
           ) : (
-            <div className="hidden border-l border-emerald-200 bg-emerald-100/50 p-4 md:flex md:items-center md:justify-center">
+            <div className="hidden min-h-56 border-l border-emerald-200 bg-emerald-100/50 p-4 md:flex md:min-h-72 md:items-center md:justify-center">
               <p className="text-center text-xs font-medium text-emerald-800">
                 Imagem indisponível para este destaque.
               </p>
@@ -191,7 +191,7 @@ export default async function InicioPage() {
         >
           <h3 className="font-semibold text-zinc-900 flex items-center gap-2"><CalendarIcon className="size-4" /> Calendário católico</h3>
           <p className="mt-2 text-sm text-zinc-600">
-            Veja as datas litúrgicas importantes do mês.
+            Veja as datas litúrgicas do ano e seus lembretes pessoais.
           </p>
         </Link>
       </section>

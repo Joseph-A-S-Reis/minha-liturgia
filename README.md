@@ -58,12 +58,42 @@ Para e-mails reais (verificação/redefinição), configure também no `.env`:
 - `SMTP_PASS`
 - `RESEND_API_KEY`
 - `EMAIL_FROM`
+- `REMINDER_CRON_SECRET` (para proteger o endpoint interno de tick dos lembretes)
 
 Ordem de envio do app:
 
 1. SMTP (se configurado)
 2. Resend (se configurado)
 3. Fallback em log no console
+
+## Scheduler de lembretes (calendário)
+
+O sistema de lembretes usa fila (`pg-boss`) e um endpoint interno para processar jobs pendentes.
+
+- Endpoint: `POST /api/internal/reminders/tick`
+- Header obrigatório: `x-reminder-secret: <REMINDER_CRON_SECRET>`
+
+Exemplo de chamada (cron externo / Netlify Scheduled Function):
+
+```bash
+curl -X POST "https://SEU-DOMINIO/api/internal/reminders/tick" \
+  -H "x-reminder-secret: SEU_SEGREDO"
+```
+
+Recomendação: execute a cada 1-5 minutos para boa precisão dos lembretes.
+
+Comportamento atual dos lembretes:
+
+- Respeita preferências por usuário (`push` / `email` habilitado ou não).
+- Respeita horário silencioso (`quiet hours`) e reagenda automaticamente para a próxima janela permitida.
+- Se um lembrete push não tiver assinatura ativa, faz fallback para e-mail (quando e-mail estiver habilitado e disponível).
+
+Checklist de produção (quando houver 404 no tick):
+
+1. Confirme que o deploy em produção inclui a rota `app/api/internal/reminders/tick/route.ts`.
+2. Verifique se `REMINDER_CRON_SECRET` está configurado no ambiente de produção.
+3. Teste o endpoint com o header `x-reminder-secret`.
+4. Esperado: JSON com `401` (segredo inválido) ou `200` (segredo válido), nunca HTML de página `not found`.
 
 Se usar Gmail SMTP, prefira senha de app em `SMTP_PASS` (não a senha normal da conta).
 

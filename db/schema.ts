@@ -212,3 +212,143 @@ export const mutationIdempotency = pgTable(
     ),
   }),
 );
+
+export const userEvents = pgTable(
+  "user_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 160 }).notNull(),
+    message: text("message"),
+    startAt: timestamp("start_at", { mode: "date" }).notNull(),
+    endAt: timestamp("end_at", { mode: "date" }),
+    allDay: boolean("all_day").default(true).notNull(),
+    timezone: varchar("timezone", { length: 80 }).default("America/Sao_Paulo").notNull(),
+    recurrence: varchar("recurrence", { length: 16 }).default("none").notNull(),
+    recurrenceInterval: integer("recurrence_interval").default(1).notNull(),
+    recurrenceUntil: timestamp("recurrence_until", { mode: "date" }),
+    source: varchar("source", { length: 16 }).default("custom").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userStartIdx: index("user_events_user_start_idx").on(table.userId, table.startAt),
+    userUpdatedIdx: index("user_events_user_updated_idx").on(table.userId, table.updatedAt),
+  }),
+);
+
+export const eventReminders = pgTable(
+  "event_reminders",
+  {
+    id: text("id").primaryKey(),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => userEvents.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    remindBeforeMinutes: integer("remind_before_minutes").notNull(),
+    channel: varchar("channel", { length: 16 }).default("push").notNull(),
+    isEnabled: boolean("is_enabled").default(true).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    eventReminderUnique: uniqueIndex("event_reminders_event_channel_before_unique").on(
+      table.eventId,
+      table.channel,
+      table.remindBeforeMinutes,
+    ),
+    userEnabledIdx: index("event_reminders_user_enabled_idx").on(
+      table.userId,
+      table.isEnabled,
+    ),
+  }),
+);
+
+export const notificationPreferences = pgTable("notification_preferences", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  timezone: varchar("timezone", { length: 80 }).default("America/Sao_Paulo").notNull(),
+  emailEnabled: boolean("email_enabled").default(true).notNull(),
+  pushEnabled: boolean("push_enabled").default(true).notNull(),
+  quietHoursStart: integer("quiet_hours_start"),
+  quietHoursEnd: integer("quiet_hours_end"),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+});
+
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    contentEncoding: varchar("content_encoding", { length: 24 }).default("aes128gcm").notNull(),
+    userAgent: text("user_agent"),
+    lastSeenAt: timestamp("last_seen_at", { mode: "date" }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    endpointUnique: uniqueIndex("push_subscriptions_endpoint_unique").on(table.endpoint),
+    userUpdatedIdx: index("push_subscriptions_user_updated_idx").on(
+      table.userId,
+      table.updatedAt,
+    ),
+  }),
+);
+
+export const icsTokens = pgTable(
+  "ics_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    description: varchar("description", { length: 140 }),
+    lastUsedAt: timestamp("last_used_at", { mode: "date" }),
+    revokedAt: timestamp("revoked_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    expiresAt: timestamp("expires_at", { mode: "date" }),
+  },
+  (table) => ({
+    tokenHashUnique: uniqueIndex("ics_tokens_token_hash_unique").on(table.tokenHash),
+    userRevokedIdx: index("ics_tokens_user_revoked_idx").on(table.userId, table.revokedAt),
+  }),
+);
+
+export const notificationDeliveries = pgTable(
+  "notification_deliveries",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    eventId: text("event_id").references(() => userEvents.id, { onDelete: "set null" }),
+    reminderId: text("reminder_id").references(() => eventReminders.id, {
+      onDelete: "set null",
+    }),
+    channel: varchar("channel", { length: 16 }).notNull(),
+    status: varchar("status", { length: 24 }).default("pending").notNull(),
+    scheduledFor: timestamp("scheduled_for", { mode: "date" }).notNull(),
+    sentAt: timestamp("sent_at", { mode: "date" }),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    deliveryScheduleIdx: index("notification_deliveries_schedule_idx").on(
+      table.status,
+      table.scheduledFor,
+    ),
+    userSentIdx: index("notification_deliveries_user_sent_idx").on(table.userId, table.sentAt),
+  }),
+);

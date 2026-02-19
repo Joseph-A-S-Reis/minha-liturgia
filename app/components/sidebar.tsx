@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LoginIcon, LogoutIcon } from "./icons";
+import { LoginIcon } from "./icons";
 import { isNavItemActive, navigationItems } from "./navigation-items";
+import { LogoutButton } from "./logout-button";
 
 type SidebarProps = {
   isAuthenticated: boolean;
@@ -46,10 +47,10 @@ export function Sidebar({ isAuthenticated }: SidebarProps) {
       
       <div className="mt-auto p-6 bg-[#002244]">
         {isAuthenticated ? (
-          <Link href="/api/auth/signout" className="flex items-center gap-2 text-sm opacity-80 hover:opacity-100">
-             <LogoutIcon className="size-4" />
-             <span>Sair da conta</span>
-          </Link>
+          <LogoutButton
+            label="Sair da conta"
+            className="flex items-center gap-2 text-sm opacity-80 hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-60"
+          />
         ) : (
           <Link href="/entrar" className="flex items-center gap-2 text-lg font-medium hover:text-sky-200 transition-colors">
              <LoginIcon className="size-5" />

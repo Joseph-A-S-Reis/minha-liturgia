@@ -1,7 +1,9 @@
 import { auth } from "@/auth";
+import { getAppBaseUrl } from "@/lib/app-url";
 
 export default auth((request) => {
   const isAuthenticated = Boolean(request.auth);
+  const appBaseUrl = getAppBaseUrl();
   const isDiaryRoute = request.nextUrl.pathname.startsWith("/diario");
   const isAuthPage = [
     "/entrar",
@@ -12,11 +14,11 @@ export default auth((request) => {
   ].includes(request.nextUrl.pathname);
 
   if (isDiaryRoute && !isAuthenticated) {
-    return Response.redirect(new URL("/entrar", request.nextUrl));
+    return Response.redirect(new URL("/entrar", appBaseUrl));
   }
 
   if (isAuthPage && isAuthenticated) {
-    return Response.redirect(new URL("/inicio", request.nextUrl));
+    return Response.redirect(new URL("/inicio", appBaseUrl));
   }
 
   return undefined;
