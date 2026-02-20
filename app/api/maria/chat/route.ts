@@ -4,6 +4,8 @@ import { MARIA_MODES } from "@/lib/maria/prompts";
 import { generateMariaReply } from "@/lib/maria/openrouter";
 import { checkMariaRateLimit } from "@/lib/maria/rate-limit";
 import { evaluateMariaPolicy } from "@/lib/maria/policy";
+import { searchPublishedLibraryContextByChunks } from "@/lib/library-repository";
+import { logMariaCitationTelemetry } from "@/lib/maria/citation-telemetry";
 
 const chatSchema = z.object({
   mode: z.enum(MARIA_MODES),
@@ -11,6 +13,12 @@ const chatSchema = z.object({
 });
 
 export const runtime = "nodejs";
+
+function getMariaCitationMinScore() {
+  const raw = Number(process.env.MARIA_CITATION_MIN_SCORE ?? "8");
+  if (!Number.isFinite(raw)) return 8;
+  return Math.max(1, Math.min(40, Math.floor(raw)));
+}
 
 export async function POST(request: Request) {
   try {
@@ -53,16 +61,76 @@ export async function POST(request: Request) {
       );
     }
 
+    const minCitationScore = getMariaCitationMinScore();
+
+    const libraryContext = await searchPublishedLibraryContextByChunks({
+      query: parsed.data.message,
+      limit: 8,
+      minScore: minCitationScore,
+    });
+
     const result = await generateMariaReply({
       mode: parsed.data.mode,
       userMessage: parsed.data.message,
       userId: session.user.id,
+      libraryContext: libraryContext.map((item) => ({
+        resourceTitle: item.resourceTitle,
+        resourceSlug: item.resourceSlug,
+        resourceSourceUrl: item.resourceSourceUrl,
+        chunkIndex: item.chunkIndex,
+        content: item.content,
+      })),
     });
+
+    const citations = libraryContext.slice(0, 6).map((item, index) => ({
+      index: index + 1,
+      title: item.resourceTitle,
+      slug: item.resourceSlug,
+      score: item.score,
+      resourceId: item.resourceId,
+      chunkIndex: item.chunkIndex,
+      internalUrl: `/biblioteca/${item.resourceSlug}`,
+      externalSourceUrl: item.resourceSourceUrl,
+    }));
+
+    const sourceMap = new Map<string, {
+      title: string;
+      slug: string;
+      internalUrl: string;
+      externalSourceUrl: string | null;
+    }>();
+
+    for (const item of libraryContext) {
+      if (!sourceMap.has(item.resourceSlug)) {
+        sourceMap.set(item.resourceSlug, {
+          title: item.resourceTitle,
+          slug: item.resourceSlug,
+          internalUrl: `/biblioteca/${item.resourceSlug}`,
+          externalSourceUrl: item.resourceSourceUrl,
+        });
+      }
+    }
+
+    try {
+      await logMariaCitationTelemetry({
+        userId: session.user.id,
+        mode: parsed.data.mode,
+        queryText: parsed.data.message,
+        answer: result.answer,
+        citations,
+      });
+    } catch (telemetryError) {
+      const message = telemetryError instanceof Error ? telemetryError.message : "Erro desconhecido";
+      console.warn(`[maria] falha ao registrar telemetria de citações: ${message}`);
+    }
 
     return Response.json({
       answer: result.answer,
       model: result.model,
       usage: result.usage,
+      minCitationScore,
+      citations,
+      sources: Array.from(sourceMap.values()).slice(0, 6),
     });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "Falha inesperada na MarIA.";

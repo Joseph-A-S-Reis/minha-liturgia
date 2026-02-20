@@ -3,6 +3,7 @@ import {
   BookIcon,
   CalendarIcon,
   HomeIcon,
+  LibraryIcon,
   PenIcon,
   UserIcon,
 } from "./icons";
@@ -29,6 +30,7 @@ const AUTH_MATCHERS = [
 export const navigationItems: NavigationItem[] = [
   { href: "/inicio", label: "Início", icon: HomeIcon },
   { href: "/biblia", label: "Bíblia", icon: BookIcon },
+  { href: "/biblioteca", label: "Biblioteca", icon: LibraryIcon },
   { href: "/diario", label: "Diário", icon: PenIcon },
   { href: "/calendario", label: "Calendário", icon: CalendarIcon },
   { href: "/conta", label: "Conta", icon: UserIcon, activeMatchers: AUTH_MATCHERS },

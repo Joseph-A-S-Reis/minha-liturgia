@@ -15,6 +15,8 @@ export const users = pgTable(
     id: text("id").primaryKey(),
     name: text("name"),
     email: text("email").notNull(),
+    isAdmin: boolean("is_admin").default(false).notNull(),
+    isCurator: boolean("is_curator").default(false).notNull(),
     passwordHash: text("password_hash"),
     failedLoginAttempts: integer("failed_login_attempts").default(0).notNull(),
     lockedUntil: timestamp("locked_until", { mode: "date" }),
@@ -350,5 +352,205 @@ export const notificationDeliveries = pgTable(
       table.scheduledFor,
     ),
     userSentIdx: index("notification_deliveries_user_sent_idx").on(table.userId, table.sentAt),
+  }),
+);
+
+export const libraryResources = pgTable(
+  "library_resources",
+  {
+    id: text("id").primaryKey(),
+    slug: varchar("slug", { length: 180 }).notNull(),
+    title: varchar("title", { length: 220 }).notNull(),
+    summary: text("summary"),
+    contentMarkdown: text("content_markdown"),
+    resourceType: varchar("resource_type", { length: 24 }).default("article").notNull(),
+    level: varchar("level", { length: 24 }).default("basic").notNull(),
+    status: varchar("status", { length: 24 }).default("draft").notNull(),
+    isOfficialChurchSource: boolean("is_official_church_source").default(false).notNull(),
+    sourceName: varchar("source_name", { length: 140 }),
+    sourceUrl: text("source_url"),
+    coverImageUrl: text("cover_image_url"),
+    publishedAt: timestamp("published_at", { mode: "date" }),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reviewedByUserId: text("reviewed_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reviewedAt: timestamp("reviewed_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    slugUnique: uniqueIndex("library_resources_slug_unique").on(table.slug),
+    statusTypePublishedIdx: index("library_resources_status_type_published_idx").on(
+      table.status,
+      table.resourceType,
+      table.publishedAt,
+    ),
+    officialPublishedIdx: index("library_resources_official_published_idx").on(
+      table.isOfficialChurchSource,
+      table.publishedAt,
+    ),
+  }),
+);
+
+export const libraryCategories = pgTable(
+  "library_categories",
+  {
+    id: text("id").primaryKey(),
+    slug: varchar("slug", { length: 120 }).notNull(),
+    name: varchar("name", { length: 120 }).notNull(),
+    description: text("description"),
+    section: varchar("section", { length: 40 }).default("formacao").notNull(),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    slugUnique: uniqueIndex("library_categories_slug_unique").on(table.slug),
+    sectionSortIdx: index("library_categories_section_sort_idx").on(table.section, table.sortOrder),
+  }),
+);
+
+export const libraryResourceCategories = pgTable(
+  "library_resource_categories",
+  {
+    id: text("id").primaryKey(),
+    resourceId: text("resource_id")
+      .notNull()
+      .references(() => libraryResources.id, { onDelete: "cascade" }),
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => libraryCategories.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    resourceCategoryUnique: uniqueIndex("library_resource_categories_unique").on(
+      table.resourceId,
+      table.categoryId,
+    ),
+    categoryIdx: index("library_resource_categories_category_idx").on(table.categoryId),
+  }),
+);
+
+export const libraryAssets = pgTable(
+  "library_assets",
+  {
+    id: text("id").primaryKey(),
+    resourceId: text("resource_id")
+      .notNull()
+      .references(() => libraryResources.id, { onDelete: "cascade" }),
+    kind: varchar("kind", { length: 24 }).notNull(),
+    title: varchar("title", { length: 180 }),
+    mimeType: varchar("mime_type", { length: 120 }),
+    externalUrl: text("external_url"),
+    driveFileId: text("drive_file_id"),
+    byteSize: integer("byte_size"),
+    durationSeconds: integer("duration_seconds"),
+    extractedText: text("extracted_text"),
+    transcriptionText: text("transcription_text"),
+    status: varchar("status", { length: 24 }).default("ready").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    resourceKindIdx: index("library_assets_resource_kind_idx").on(table.resourceId, table.kind),
+    statusIdx: index("library_assets_status_idx").on(table.status),
+  }),
+);
+
+export const libraryResourceChunks = pgTable(
+  "library_resource_chunks",
+  {
+    id: text("id").primaryKey(),
+    resourceId: text("resource_id")
+      .notNull()
+      .references(() => libraryResources.id, { onDelete: "cascade" }),
+    sourceAssetId: text("source_asset_id").references(() => libraryAssets.id, {
+      onDelete: "set null",
+    }),
+    chunkIndex: integer("chunk_index").notNull(),
+    content: text("content").notNull(),
+    tokenEstimate: integer("token_estimate"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    resourceChunkUnique: uniqueIndex("library_resource_chunks_resource_chunk_unique").on(
+      table.resourceId,
+      table.chunkIndex,
+    ),
+    resourceIdx: index("library_resource_chunks_resource_idx").on(table.resourceId),
+  }),
+);
+
+export const libraryIngestionQueue = pgTable(
+  "library_ingestion_queue",
+  {
+    id: text("id").primaryKey(),
+    sourceName: varchar("source_name", { length: 140 }).notNull(),
+    sourceUrl: text("source_url"),
+    section: varchar("section", { length: 40 }).default("santa-igreja").notNull(),
+    title: varchar("title", { length: 260 }).notNull(),
+    summary: text("summary"),
+    contentUrl: text("content_url"),
+    contentRaw: text("content_raw"),
+    imageUrl: text("image_url"),
+    publishedAt: timestamp("published_at", { mode: "date" }),
+    status: varchar("status", { length: 24 }).default("pending_review").notNull(),
+    linkedResourceId: text("linked_resource_id").references(() => libraryResources.id, {
+      onDelete: "set null",
+    }),
+    reviewedByUserId: text("reviewed_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reviewedAt: timestamp("reviewed_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    statusCreatedIdx: index("library_ingestion_queue_status_created_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+    sectionStatusIdx: index("library_ingestion_queue_section_status_idx").on(
+      table.section,
+      table.status,
+    ),
+  }),
+);
+
+export const mariaCitationEvents = pgTable(
+  "maria_citation_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    mode: varchar("mode", { length: 24 }).notNull(),
+    queryText: text("query_text").notNull(),
+    answerExcerpt: text("answer_excerpt"),
+    citationIndex: integer("citation_index").notNull(),
+    citationScore: integer("citation_score").notNull(),
+    resourceId: text("resource_id").references(() => libraryResources.id, {
+      onDelete: "set null",
+    }),
+    resourceSlug: varchar("resource_slug", { length: 180 }).notNull(),
+    resourceTitle: varchar("resource_title", { length: 220 }).notNull(),
+    sourceUrl: text("source_url"),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userCreatedIdx: index("maria_citation_events_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+    resourceCreatedIdx: index("maria_citation_events_resource_created_idx").on(
+      table.resourceSlug,
+      table.createdAt,
+    ),
+    modeCreatedIdx: index("maria_citation_events_mode_created_idx").on(
+      table.mode,
+      table.createdAt,
+    ),
   }),
 );

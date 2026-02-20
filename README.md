@@ -146,6 +146,65 @@ Configure no `.env` (local) e no provedor de deploy (Netlify):
 - `OPENROUTER_API_KEY`
 - `OPENROUTER_MODEL` (ex.: `liquid/lfm-2.5-1.2b-thinking:free`)
 
+## Biblioteca Católica (base inicial)
+
+O módulo `/biblioteca` já possui fundação de banco para:
+
+- publicações (artigos, livros, vídeos, áudio, documentos)
+- categorias e vínculo publicação-categoria
+- assets de mídia (URL externa ou ID de arquivo no Google Drive)
+- chunks textuais para RAG
+- fila de ingestão editorial (ex.: Santa Igreja)
+
+### Variáveis para Google Drive
+
+Para usar uploads e assets hospedados no Google Drive, configure:
+
+- `GOOGLE_DRIVE_FOLDER_ID`
+- `GOOGLE_DRIVE_RESOURCES_PREFIX` (opcional; default: `recursos`)
+- `GOOGLE_OAUTH_CLIENT_ID` *(recomendado para conta Google pessoal)*
+- `GOOGLE_OAUTH_CLIENT_SECRET` *(recomendado para conta Google pessoal)*
+- `GOOGLE_OAUTH_REFRESH_TOKEN` *(recomendado para conta Google pessoal)*
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+- `LIBRARY_CRON_SECRET` (para proteger endpoints internos da Biblioteca)
+
+Prioridade de autenticação do Drive:
+
+1. OAuth2 (`GOOGLE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN`)
+2. Service Account (`GOOGLE_SERVICE_ACCOUNT_EMAIL/PRIVATE_KEY`)
+
+> Para contas Google pessoais, prefira OAuth2. Service Accounts podem falhar com erro de quota em "Meu Drive".
+
+> Observação: os fluxos legados de `sign-upload` e `confirm-upload` foram removidos. O upload oficial é `POST /api/biblioteca/assets/direct-upload`, com confirmação direta no Drive + NeonDB.
+
+Endpoint interno para healthcheck do Google Drive:
+
+- `GET /api/internal/library/drive-health`
+- Header obrigatório: `x-library-secret: <LIBRARY_CRON_SECRET>`
+
+Exemplo:
+
+```bash
+curl -X GET "https://SEU-DOMINIO/api/internal/library/drive-health" \
+  -H "x-library-secret: SEU_SEGREDO"
+```
+
+### MarIA com contexto da Biblioteca
+
+O endpoint `POST /api/maria/chat` agora busca trechos relevantes em `library_resource_chunks` (apenas conteúdos publicados) e envia esse contexto para o modelo quando houver correspondência.
+
+Quando apropriado, a MarIA tende a citar esses trechos com marcação `[1]`, `[2]`, etc.
+
+Melhorias do nível atual:
+
+- Ranking híbrido de recuperação (frase + tokens no título e conteúdo), em vez de filtro textual simples.
+- Diversificação de trechos por recurso para reduzir redundância de contexto.
+- Payload da API inclui `sources` com links internos (`/biblioteca/[slug]`) e, quando existir, link externo da fonte original.
+- A resposta da MarIA renderiza marcadores `[n]` clicáveis, apontando para o conteúdo usado como apoio.
+- Filtro de confiança configurável por score (`MARIA_CITATION_MIN_SCORE`) para reduzir citações fracas.
+- Telemetria de citações efetivamente usadas na resposta em `maria_citation_events`.
+
 ### Como funciona
 
 - Endpoint server-side: `POST /api/maria/chat`

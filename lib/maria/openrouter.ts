@@ -28,6 +28,14 @@ export type MariaChatResult = {
   model: string;
 };
 
+export type MariaLibraryContextSnippet = {
+  resourceTitle: string;
+  resourceSlug: string;
+  resourceSourceUrl?: string | null;
+  chunkIndex: number;
+  content: string;
+};
+
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 function getOpenRouterConfig() {
@@ -45,17 +53,43 @@ export async function generateMariaReply(input: {
   mode: MariaMode;
   userMessage: string;
   userId: string;
+  libraryContext?: MariaLibraryContextSnippet[];
 }) {
   const { apiKey, model } = getOpenRouterConfig();
+
+  const context = input.libraryContext ?? [];
+  const hasContext = context.length > 0;
+
+  const contextBlock = hasContext
+    ? context
+        .map(
+          (item, idx) =>
+            `[${idx + 1}] ${item.resourceTitle} (/biblioteca/${item.resourceSlug})${
+              item.resourceSourceUrl ? ` · fonte: ${item.resourceSourceUrl}` : ""
+            } · trecho ${item.chunkIndex}\n${item.content}`,
+        )
+        .join("\n\n")
+    : "";
 
   const messages: OpenRouterMessage[] = [
     {
       role: "system",
       content: getMariaSystemPrompt(input.mode),
     },
+    ...(hasContext
+      ? [
+          {
+            role: "system" as const,
+            content:
+              "Contexto adicional da Biblioteca Católica: use os trechos apenas quando forem relevantes para responder e prefira citar no formato [n]. Se não forem relevantes, responda normalmente sem forçar citações.",
+          },
+        ]
+      : []),
     {
       role: "user",
-      content: `Modo escolhido: ${getMariaModeLabel(input.mode)}\n\nPergunta do usuário:\n${input.userMessage}`,
+      content: `Modo escolhido: ${getMariaModeLabel(input.mode)}\n\nPergunta do usuário:\n${input.userMessage}${
+        hasContext ? `\n\nTrechos de apoio da Biblioteca:\n${contextBlock}` : ""
+      }`,
     },
   ];
 

@@ -15,7 +15,72 @@ type ChatResponse = {
   usage?: {
     total_tokens?: number;
   };
+  citations?: Array<{
+    index: number;
+    title: string;
+    slug: string;
+    score: number;
+    resourceId: string;
+    chunkIndex: number;
+    internalUrl: string;
+    externalSourceUrl?: string | null;
+  }>;
+  sources?: Array<{
+    title: string;
+    slug: string;
+    internalUrl: string;
+    externalSourceUrl?: string | null;
+  }>;
 };
+
+type CitationItem = NonNullable<ChatResponse["citations"]>[number];
+
+function renderAnswerWithCitationLinks(answer: string, citations: CitationItem[]) {
+  const citationMap = new Map<number, CitationItem>();
+  for (const citation of citations) {
+    citationMap.set(citation.index, citation);
+  }
+
+  const regex = /\[(\d+)\]/g;
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(answer)) !== null) {
+    const matchStart = match.index;
+    const matchEnd = regex.lastIndex;
+
+    if (matchStart > lastIndex) {
+      nodes.push(answer.slice(lastIndex, matchStart));
+    }
+
+    const citationIndex = Number(match[1]);
+    const citation = Number.isFinite(citationIndex) ? citationMap.get(citationIndex) : undefined;
+
+    if (citation) {
+      nodes.push(
+        <a
+          key={`citation-${citationIndex}-${matchStart}`}
+          href={citation.internalUrl}
+          className="mx-0.5 inline-flex rounded bg-violet-100 px-1.5 py-0.5 text-[11px] font-semibold text-violet-900 hover:bg-violet-200"
+          title={`${citation.title} · trecho ${citation.chunkIndex}`}
+        >
+          [{citationIndex}]
+        </a>,
+      );
+    } else {
+      nodes.push(match[0]);
+    }
+
+    lastIndex = matchEnd;
+  }
+
+  if (lastIndex < answer.length) {
+    nodes.push(answer.slice(lastIndex));
+  }
+
+  return nodes;
+}
 
 const MODE_OPTIONS: Array<{
   id: MariaMode;
@@ -50,6 +115,15 @@ export function MariaAssistant() {
   const [reference, setReference] = useState("");
   const [model, setModel] = useState<string | null>(null);
   const [usageTokens, setUsageTokens] = useState<number | null>(null);
+  const [citations, setCitations] = useState<CitationItem[]>([]);
+  const [sources, setSources] = useState<
+    Array<{
+      title: string;
+      slug: string;
+      internalUrl: string;
+      externalSourceUrl?: string | null;
+    }>
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const [saveInfo, setSaveInfo] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -85,6 +159,8 @@ export function MariaAssistant() {
         setAnswer(data.answer);
         setModel(data.model ?? null);
         setUsageTokens(data.usage?.total_tokens ?? null);
+        setCitations(Array.isArray(data.citations) ? data.citations : []);
+        setSources(Array.isArray(data.sources) ? data.sources : []);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Erro inesperado ao consultar a MarIA.");
       }
@@ -193,7 +269,37 @@ export function MariaAssistant() {
       {answer ? (
         <div className="mt-4 space-y-3 rounded-xl border border-violet-200 bg-white p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Resposta da MarIA</p>
-          <p className="whitespace-pre-wrap text-sm text-zinc-800">{answer}</p>
+          <p className="whitespace-pre-wrap text-sm text-zinc-800">
+            {renderAnswerWithCitationLinks(answer, citations)}
+          </p>
+
+          {sources.length > 0 ? (
+            <div className="rounded-lg border border-violet-100 bg-violet-50 p-3">
+              <p className="text-xs font-semibold text-violet-900">Fontes relacionadas</p>
+              <ul className="mt-2 space-y-1">
+                {sources.map((source) => (
+                  <li key={source.slug} className="text-xs text-violet-900">
+                    <a href={source.internalUrl} className="font-semibold hover:underline">
+                      {source.title}
+                    </a>
+                    {source.externalSourceUrl ? (
+                      <>
+                        {" · "}
+                        <a
+                          href={source.externalSourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:underline"
+                        >
+                          fonte externa ↗
+                        </a>
+                      </>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div className="space-y-2 rounded-lg border border-violet-100 bg-violet-50 p-3">
             <p className="text-xs font-semibold text-violet-900">Salvar como nota de versículo (opcional)</p>

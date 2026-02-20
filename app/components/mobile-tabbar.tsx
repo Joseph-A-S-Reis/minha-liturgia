@@ -12,7 +12,7 @@ export function MobileTabbar() {
       aria-label="Navegação móvel"
       className="mobile-tabbar-safe md:hidden fixed inset-x-0 bottom-0 z-50 border-t border-sky-200 bg-white/95 backdrop-blur supports-backdrop-filter:bg-white/90"
     >
-      <ul className="grid grid-cols-5 gap-1 px-2 py-2">
+      <ul className="grid grid-cols-6 gap-1 px-2 py-2">
         {navigationItems.map((item) => {
           const isActive = pathname ? isNavItemActive(pathname, item) : false;
 
