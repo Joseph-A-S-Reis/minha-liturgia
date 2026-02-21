@@ -48,19 +48,6 @@ function getAllowedKindsByResourceType(resourceType: string): AssetKind[] {
   }
 }
 
-function getResourcesFolderByKind(kind: AssetKind): string {
-  switch (kind) {
-    case "pdf":
-      return "pdfs";
-    case "docx":
-      return "documentos";
-    case "epub":
-      return "ebooks";
-    default:
-      return "documentos";
-  }
-}
-
 function sanitizeFileName(fileName: string) {
   return fileName
     .normalize("NFD")
@@ -75,6 +62,19 @@ function sanitizeAppPropertyValue(value: string, max = 120) {
   return value.replace(/[\u0000-\u001F\u007F]/g, "").slice(0, max);
 }
 
+function getResourcesFolderByKind(kind: AssetKind): string {
+  switch (kind) {
+    case "pdf":
+      return "pdfs";
+    case "docx":
+      return "documentos";
+    case "epub":
+      return "ebooks";
+    default:
+      return "documentos";
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const session = await auth();
@@ -85,11 +85,14 @@ export async function POST(request: Request) {
     await requireLibraryPublishAccess(session.user.id);
 
     const formData = await request.formData();
-    const resourceId = String(formData.get("resourceId") ?? "").trim();
+    const resourceType = String(formData.get("resourceType") ?? "").trim();
     const fileEntry = formData.get("file");
 
-    if (!resourceId) {
-      return Response.json({ error: "resourceId é obrigatório.", code: "RESOURCE_ID_REQUIRED" }, { status: 400 });
+    if (!resourceType) {
+      return Response.json(
+        { error: "resourceType é obrigatório.", code: "RESOURCE_TYPE_REQUIRED" },
+        { status: 400 },
+      );
     }
 
     if (!(fileEntry instanceof File)) {
@@ -114,33 +117,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const [resource] = await db
-      .select({
-        id: libraryResources.id,
-        resourceType: libraryResources.resourceType,
-        createdByUserId: libraryResources.createdByUserId,
-      })
-      .from(libraryResources)
-      .where(
-        and(
-          eq(libraryResources.id, resourceId),
-          eq(libraryResources.createdByUserId, session.user.id),
-        ),
-      )
-      .limit(1);
-
-    if (!resource) {
-      return Response.json(
-        { error: "Publicação não encontrada ou sem permissão.", code: "RESOURCE_NOT_FOUND_OR_FORBIDDEN" },
-        { status: 404 },
-      );
-    }
-
-    const allowedKinds = getAllowedKindsByResourceType(resource.resourceType);
+    const allowedKinds = getAllowedKindsByResourceType(resourceType);
     if (allowedKinds.length === 0) {
       return Response.json(
         {
-          error: `O tipo ${resource.resourceType} não aceita upload de arquivo.`,
+          error: `O tipo ${resourceType} não aceita upload de arquivo.`,
           code: "UPLOAD_NOT_ALLOWED_FOR_RESOURCE_TYPE",
         },
         { status: 400 },
@@ -150,7 +131,7 @@ export async function POST(request: Request) {
     if (!allowedKinds.includes(detectedKind)) {
       return Response.json(
         {
-          error: `Este conteúdo (${resource.resourceType}) aceita apenas: ${allowedKinds.join(", ")}.`,
+          error: `Este conteúdo (${resourceType}) aceita apenas: ${allowedKinds.join(", ")}.`,
           code: "KIND_NOT_ALLOWED_FOR_RESOURCE_TYPE",
         },
         { status: 400 },
@@ -162,11 +143,16 @@ export async function POST(request: Request) {
         id: libraryAssets.id,
         driveFileId: libraryAssets.driveFileId,
         externalUrl: libraryAssets.externalUrl,
+        kind: libraryAssets.kind,
+        title: libraryAssets.title,
+        mimeType: libraryAssets.mimeType,
+        byteSize: libraryAssets.byteSize,
       })
       .from(libraryAssets)
+      .innerJoin(libraryResources, eq(libraryResources.id, libraryAssets.resourceId))
       .where(
         and(
-          eq(libraryAssets.resourceId, resourceId),
+          eq(libraryResources.createdByUserId, session.user.id),
           eq(libraryAssets.kind, detectedKind),
           eq(libraryAssets.title, fileEntry.name),
           eq(libraryAssets.mimeType, fileEntry.type || "application/octet-stream"),
@@ -185,12 +171,15 @@ export async function POST(request: Request) {
       if (stillExistsInDrive) {
         return Response.json({
           ok: true,
-          assetId: existingAsset.id,
-          resourceId,
-          driveFileId: existingAsset.driveFileId,
-          publicUrl: existingAsset.externalUrl,
-          processingScheduled: false,
           alreadyExists: true,
+          asset: {
+            kind: existingAsset.kind,
+            title: existingAsset.title,
+            mimeType: existingAsset.mimeType,
+            driveFileId: existingAsset.driveFileId,
+            externalUrl: existingAsset.externalUrl,
+            byteSize: existingAsset.byteSize,
+          },
         });
       }
     }
@@ -213,7 +202,8 @@ export async function POST(request: Request) {
       "",
     );
     const resourcesFolder = getResourcesFolderByKind(detectedKind);
-    const storagePath = `${resourcesRoot}/${resourcesFolder}/${resourceId}/${Date.now()}-${objectName}`;
+    const tempKey = crypto.randomUUID();
+    const storagePath = `${resourcesRoot}/${resourcesFolder}/prepublish/${session.user.id}/${Date.now()}-${objectName}`;
     const buffer = Buffer.from(await fileEntry.arrayBuffer());
     const kindFolderId = await resolveGoogleDriveParentFolderByKind(detectedKind);
 
@@ -223,37 +213,28 @@ export async function POST(request: Request) {
       contentType: fileEntry.type || "application/octet-stream",
       parentFolderId: kindFolderId,
       appProperties: {
-        resourceId: sanitizeAppPropertyValue(resourceId),
+        tempUploadKey: sanitizeAppPropertyValue(tempKey),
+        userId: sanitizeAppPropertyValue(session.user.id),
         kind: sanitizeAppPropertyValue(detectedKind),
         storagePath: sanitizeAppPropertyValue(storagePath),
       },
-    });
-
-    const assetId = crypto.randomUUID();
-
-    await db.insert(libraryAssets).values({
-      id: assetId,
-      resourceId,
-      kind: detectedKind,
-      title: fileEntry.name,
-      mimeType: fileEntry.type || "application/octet-stream",
-      driveFileId: uploaded.fileId,
-      externalUrl: uploaded.webViewUrl,
-      byteSize: fileEntry.size,
-      status: "ready",
     });
 
     const warnings = [...(uploaded.permissionError ? [uploaded.permissionError] : [])];
 
     return Response.json({
       ok: true,
-      assetId,
-      resourceId,
-      driveFileId: uploaded.fileId,
-      publicUrl: uploaded.webViewUrl,
-      processingScheduled: false,
+      alreadyExists: false,
       warningCode: uploaded.permissionError ? "UPLOAD_COMPLETED_WITH_WARNINGS" : undefined,
       warnings: warnings.length > 0 ? warnings : undefined,
+      asset: {
+        kind: detectedKind,
+        title: fileEntry.name,
+        mimeType: fileEntry.type || "application/octet-stream",
+        driveFileId: uploaded.fileId,
+        externalUrl: uploaded.webViewUrl,
+        byteSize: fileEntry.size,
+      },
     });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "Falha inesperada no upload.";

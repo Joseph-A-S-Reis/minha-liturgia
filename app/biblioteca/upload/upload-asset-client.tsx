@@ -11,39 +11,34 @@ type Props = {
 type SignUploadResponse = {
   ok: boolean;
   assetId: string;
+  alreadyExists?: boolean;
   warningCode?: string;
   warnings?: string[];
   processingScheduled?: boolean;
 };
 
-type AssetKind = "pdf" | "image" | "video" | "audio" | "html";
+type AssetKind = "pdf" | "docx" | "epub";
 
 function getAllowedKindsByResourceType(resourceType: string): AssetKind[] {
   switch (resourceType) {
-    case "html":
-      return ["html"];
-    case "document":
-      return ["pdf"];
-    case "audio":
-      return ["audio"];
-    case "video":
-      return ["video"];
-    case "book":
-      return ["pdf", "html", "image", "audio", "video"];
     case "article":
-      return ["html", "pdf", "image", "video", "audio"];
+      return [];
+    case "book":
+    case "document":
+      return ["pdf", "docx", "epub"];
     default:
-      return ["html", "pdf", "image", "video", "audio"];
+      return [];
   }
 }
 
 function acceptFromKinds(kinds: AssetKind[]): string {
   const map: Record<AssetKind, string[]> = {
-    html: [".html", ".htm", "text/html"],
     pdf: ["application/pdf", ".pdf"],
-    image: ["image/*"],
-    video: ["video/*"],
-    audio: ["audio/*"],
+    docx: [
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ".docx",
+    ],
+    epub: ["application/epub+zip", ".epub"],
   };
 
   return kinds.flatMap((kind) => map[kind]).join(",");
@@ -51,11 +46,9 @@ function acceptFromKinds(kinds: AssetKind[]): string {
 
 function describeKinds(kinds: AssetKind[]) {
   const labelMap: Record<AssetKind, string> = {
-    html: "HTML",
     pdf: "PDF",
-    image: "imagem",
-    video: "vídeo",
-    audio: "áudio",
+    docx: "DOCX",
+    epub: "EPUB",
   };
 
   return kinds.map((kind) => labelMap[kind]).join(", ");
@@ -64,24 +57,19 @@ function describeKinds(kinds: AssetKind[]) {
 function detectKindFromMime(file: File): AssetKind | null {
   const fileName = file.name.toLowerCase();
 
-  if (file.type === "text/html" || fileName.endsWith(".html") || fileName.endsWith(".htm")) {
-    return "html";
-  }
-
   if (file.type === "application/pdf") {
     return "pdf";
   }
 
-  if (file.type.startsWith("image/")) {
-    return "image";
+  if (
+    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    fileName.endsWith(".docx")
+  ) {
+    return "docx";
   }
 
-  if (file.type.startsWith("video/")) {
-    return "video";
-  }
-
-  if (file.type.startsWith("audio/")) {
-    return "audio";
+  if (file.type === "application/epub+zip" || fileName.endsWith(".epub")) {
+    return "epub";
   }
 
   return null;
@@ -103,9 +91,12 @@ export function UploadAssetClient({ resourceId, resourceType }: Props) {
 
     const safeKind = detectKindFromMime(file);
     if (!safeKind) {
-      setStatus(
-        "Formatos suportados: HTML, PDF, imagem, vídeo e áudio. Para HTML, use arquivos .html ou .htm.",
-      );
+      setStatus("Formatos suportados: PDF, DOCX e EPUB.");
+      return;
+    }
+
+    if (allowedKinds.length === 0) {
+      setStatus(`Este conteúdo (${resourceType}) não aceita upload de arquivo.`);
       return;
     }
 
@@ -138,6 +129,12 @@ export function UploadAssetClient({ resourceId, resourceType }: Props) {
     const uploadPayload = (await uploadResponse.json()) as SignUploadResponse;
     if (!uploadPayload.ok || !uploadPayload.assetId) {
       throw new Error("Não foi possível confirmar o upload do arquivo.");
+    }
+
+    if (uploadPayload.alreadyExists) {
+      setStatus("Este arquivo já existe no Google Drive para este conteúdo. Reutilizando publicação existente.");
+      router.refresh();
+      return;
     }
 
     if (uploadPayload.warningCode && Array.isArray(uploadPayload.warnings) && uploadPayload.warnings.length > 0) {

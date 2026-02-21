@@ -20,19 +20,16 @@ export default async function NovaPublicacaoBibliotecaPage() {
   const categories = await getLibraryCategories();
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-6 px-6 py-10 sm:px-10">
+    <main className="mx-auto flex min-h-screen w-full flex-col gap-6 px-6 py-10 sm:px-10">
       <header className="space-y-2">
         <p className="text-sm text-zinc-500">
           <Link href="/biblioteca" className="hover:underline">
             Biblioteca
           </Link>{" "}
-          / Nova publicação
+          / Criar conteúdo
         </p>
-        <h1 className="text-3xl font-bold text-zinc-900 sm:text-4xl">Criar rascunho</h1>
-        <p className="text-zinc-600">
-          Ao criar o conteúdo, ele é publicado publicamente na Biblioteca. Os campos mudam de acordo com
-          o tipo selecionado e o upload será validado pela mídia compatível.
-        </p>
+        <h1 className="text-3xl font-bold text-zinc-900 sm:text-4xl">Criar e publicar conteúdo</h1>
+        <p className="text-sm text-zinc-600">Preencha os campos, envie o arquivo e publique.</p>
       </header>
 
       <NewResourceForm

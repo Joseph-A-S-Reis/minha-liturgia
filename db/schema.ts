@@ -364,7 +364,6 @@ export const libraryResources = pgTable(
     summary: text("summary"),
     contentMarkdown: text("content_markdown"),
     resourceType: varchar("resource_type", { length: 24 }).default("article").notNull(),
-    level: varchar("level", { length: 24 }).default("basic").notNull(),
     status: varchar("status", { length: 24 }).default("draft").notNull(),
     isOfficialChurchSource: boolean("is_official_church_source").default(false).notNull(),
     sourceName: varchar("source_name", { length: 140 }),

@@ -21,7 +21,6 @@ export type LibraryResourceCard = {
   title: string;
   summary: string | null;
   resourceType: string;
-  level: string;
   coverImageUrl: string | null;
   isOfficialChurchSource: boolean;
   sourceName: string | null;
@@ -112,7 +111,6 @@ export async function listPublishedLibraryResources(
       title: libraryResources.title,
       summary: libraryResources.summary,
       resourceType: libraryResources.resourceType,
-      level: libraryResources.level,
       coverImageUrl: libraryResources.coverImageUrl,
       isOfficialChurchSource: libraryResources.isOfficialChurchSource,
       sourceName: libraryResources.sourceName,
@@ -179,7 +177,6 @@ export async function getPublishedLibraryResourceBySlug(
       title: libraryResources.title,
       summary: libraryResources.summary,
       resourceType: libraryResources.resourceType,
-      level: libraryResources.level,
       coverImageUrl: libraryResources.coverImageUrl,
       isOfficialChurchSource: libraryResources.isOfficialChurchSource,
       sourceName: libraryResources.sourceName,

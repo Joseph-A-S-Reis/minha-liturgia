@@ -19,10 +19,7 @@ const RESOURCE_TYPES = [
   { value: "all", label: "Todos" },
   { value: "article", label: "Artigos" },
   { value: "book", label: "Livros" },
-  { value: "video", label: "Vídeos" },
-  { value: "audio", label: "Áudios" },
   { value: "document", label: "Documentos" },
-  { value: "html", label: "Páginas HTML" },
 ] as const;
 
 export default async function BibliotecaPage({ searchParams }: PageProps) {
@@ -46,7 +43,7 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
       listPublishedLibraryResources({
         query: query || undefined,
         type: selectedType !== "all" ? selectedType : undefined,
-        section: tab === "santa-igreja" ? "santa-igreja" : undefined,
+        section: undefined,
         officialOnly: tab === "santa-igreja",
         limit: 80,
       }),
@@ -185,9 +182,6 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-800">
                     {resource.resourceType}
-                  </span>
-                  <span className="rounded-full bg-zinc-200 px-2.5 py-1 text-xs font-semibold text-zinc-700">
-                    nível {resource.level}
                   </span>
                   {resource.isOfficialChurchSource ? (
                     <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">

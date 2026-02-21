@@ -18,7 +18,14 @@ type GoogleDriveUploadResult = {
   permissionError?: string;
 };
 
-export type GoogleDriveAssetKind = "pdf" | "image" | "video" | "audio" | "html";
+export type GoogleDriveAssetKind =
+  | "pdf"
+  | "image"
+  | "video"
+  | "audio"
+  | "html"
+  | "docx"
+  | "epub";
 
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
@@ -246,12 +253,30 @@ function getFolderNamesByKind(kind: GoogleDriveAssetKind) {
     case "pdf":
       return ["pdfs", "documentos"];
     case "html":
-      return ["paginas", "páginas"];
+      return ["htmls", "paginas", "páginas"];
     case "image":
       return ["imagens", "images"];
+    case "docx":
+      return ["documentos", "docx", "word"];
+    case "epub":
+      return ["ebooks", "epub"];
     default:
       return ["midias", "mídias"];
   }
+}
+
+function getGoogleDriveFolderIdByKindFromEnv(kind: GoogleDriveAssetKind) {
+  const map: Record<GoogleDriveAssetKind, string | undefined> = {
+    html: process.env.GOOGLE_DRIVE_HTMLS_FOLDER_ID,
+    video: process.env.GOOGLE_DRIVE_VIDEOS_FOLDER_ID,
+    audio: process.env.GOOGLE_DRIVE_AUDIOS_FOLDER_ID,
+    image: process.env.GOOGLE_DRIVE_IMAGENS_FOLDER_ID,
+    pdf: process.env.GOOGLE_DRIVE_PDFS_FOLDER_ID,
+    docx: process.env.GOOGLE_DRIVE_DOCX_FOLDER_ID,
+    epub: process.env.GOOGLE_DRIVE_EPUBS_FOLDER_ID,
+  };
+
+  return map[kind]?.trim() || null;
 }
 
 async function findGoogleDriveChildFolderIdByName(input: {
@@ -291,6 +316,11 @@ async function findGoogleDriveChildFolderIdByName(input: {
 }
 
 export async function resolveGoogleDriveParentFolderByKind(kind: GoogleDriveAssetKind) {
+  const explicitFolderId = getGoogleDriveFolderIdByKindFromEnv(kind);
+  if (explicitFolderId) {
+    return explicitFolderId;
+  }
+
   const rootFolderId = getGoogleDriveDefaultFolderId();
   if (!rootFolderId) {
     throw new Error("GOOGLE_DRIVE_FOLDER_ID não definido para upload de mídia.");
