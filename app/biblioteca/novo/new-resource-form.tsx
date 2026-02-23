@@ -262,8 +262,17 @@ export function NewResourceForm({ categories }: Props) {
                 idempotencyKey: crypto.randomUUID(),
               });
 
-              if (!result.ok || !result.slug) {
-                throw new Error("Não foi possível publicar o conteúdo.");
+              if (!result.ok) {
+                throw new Error(result.error || "Não foi possível publicar o conteúdo.");
+              }
+
+              if (result.deduped) {
+                setStatus("Requisição duplicada detectada. Aguarde e verifique a Biblioteca.");
+                return;
+              }
+
+              if (!result.slug) {
+                throw new Error("Publicação concluída sem slug de retorno. Tente novamente.");
               }
 
               router.push(`/biblioteca/${result.slug}`);

@@ -3,7 +3,6 @@
 import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import DOMPurify from "isomorphic-dompurify";
 import { load } from "cheerio";
 import { auth } from "@/auth";
 import { db } from "@/db/client";
@@ -77,6 +76,36 @@ const ARTICLE_ALLOWED_ATTR = [
   "width",
 ] as const;
 
+const SAFE_URL_PATTERN = /^(https?:|mailto:|tel:|\/|#)/i;
+
+function isSafeResourceUrl(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return true;
+  return SAFE_URL_PATTERN.test(normalized);
+}
+
+function normalizeActionError(error: unknown): string {
+  if (error instanceof z.ZodError) {
+    const issue = error.issues[0];
+    return issue?.message ?? "Dados inválidos para publicação.";
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  const dbCode =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: string }).code)
+      : "";
+
+  if (dbCode === "42P01") {
+    return "As tabelas necessárias não existem neste banco de produção. Rode as migrações com o DATABASE_URL atual (npm run db:push).";
+  }
+
+  return "Falha inesperada ao publicar conteúdo.";
+}
+
 function sanitizeArticleHtml(rawHtml: string) {
   const $ = load(rawHtml);
 
@@ -84,13 +113,60 @@ function sanitizeArticleHtml(rawHtml: string) {
     "script,style,noscript,object,embed,link,meta,base,head,form,input,button,textarea,select,nav,menu,aside,header,footer,area",
   ).remove();
 
+  const allowedTags = new Set<string>(ARTICLE_ALLOWED_TAGS);
+  const allowedAttrs = new Set<string>(ARTICLE_ALLOWED_ATTR);
+
+  $("*").each((_, element) => {
+    const tag = element.tagName?.toLowerCase();
+
+    if (!tag) {
+      return;
+    }
+
+    if (!allowedTags.has(tag)) {
+      $(element).replaceWith($(element).contents());
+      return;
+    }
+
+    const attributes = { ...(element.attribs ?? {}) };
+
+    for (const [attrName, attrValue] of Object.entries(attributes)) {
+      const key = attrName.toLowerCase();
+      const value = String(attrValue ?? "").trim();
+
+      if (
+        key === "style" ||
+        key === "class" ||
+        key === "id" ||
+        key.startsWith("on") ||
+        !allowedAttrs.has(key)
+      ) {
+        $(element).removeAttr(attrName);
+        continue;
+      }
+
+      if (["href", "src", "poster"].includes(key) && !isSafeResourceUrl(value)) {
+        $(element).removeAttr(attrName);
+        continue;
+      }
+
+      if (key === "target" && value === "_blank") {
+        const rel = ($(element).attr("rel") ?? "")
+          .split(/\s+/)
+          .map((token) => token.trim().toLowerCase())
+          .filter(Boolean);
+
+        const relSet = new Set(rel);
+        relSet.add("noopener");
+        relSet.add("noreferrer");
+        $(element).attr("rel", Array.from(relSet).join(" "));
+      }
+    }
+  });
+
   const htmlBody = $("body").html() ?? $.root().html() ?? rawHtml;
 
-  return DOMPurify.sanitize(htmlBody, {
-    ALLOWED_TAGS: [...ARTICLE_ALLOWED_TAGS],
-    ALLOWED_ATTR: [...ARTICLE_ALLOWED_ATTR],
-    FORBID_ATTR: ["style", "class", "id"],
-  }).trim();
+  return htmlBody.trim();
 }
 
 const createResourceSchema = z
@@ -285,97 +361,106 @@ export async function createLibraryResourceDraftAction(input: unknown) {
 }
 
 export async function createAndPublishLibraryResourceAction(input: unknown) {
-  const userId = await requireUserId();
-  await requireLibraryPublishAccess(userId);
-  const parsed = createAndPublishSchema.parse(input);
+  try {
+    const userId = await requireUserId();
+    await requireLibraryPublishAccess(userId);
+    const parsed = createAndPublishSchema.parse(input);
 
-  const actionKey = createIdempotencyKey("library:resource:create-publish", {
-    ...parsed,
-    request: parsed.idempotencyKey ?? null,
-  });
+    const actionKey = createIdempotencyKey("library:resource:create-publish", {
+      ...parsed,
+      request: parsed.idempotencyKey ?? null,
+    });
 
-  const canProcess = await acquireIdempotencyLock({
-    userId,
-    actionType: "library:resource:create-publish",
-    actionKey,
-    ttlSeconds: 180,
-  });
+    const canProcess = await acquireIdempotencyLock({
+      userId,
+      actionType: "library:resource:create-publish",
+      actionKey,
+      ttlSeconds: 180,
+    });
 
-  if (!canProcess) {
-    return { ok: true as const, deduped: true as const };
-  }
-
-  const baseSlug = slugify(parsed.title) || crypto.randomUUID();
-  let slug = baseSlug;
-
-  for (let attempt = 1; attempt < 6; attempt += 1) {
-    const [existing] = await db
-      .select({ id: libraryResources.id })
-      .from(libraryResources)
-      .where(eq(libraryResources.slug, slug))
-      .limit(1);
-
-    if (!existing) {
-      break;
+    if (!canProcess) {
+      return { ok: true as const, deduped: true as const };
     }
 
-    slug = `${baseSlug}-${attempt + 1}`;
-  }
+    const baseSlug = slugify(parsed.title) || crypto.randomUUID();
+    let slug = baseSlug;
 
-  const resourceId = crypto.randomUUID();
-  const isArticle = parsed.resourceType === "article";
-  const now = new Date();
+    for (let attempt = 1; attempt < 6; attempt += 1) {
+      const [existing] = await db
+        .select({ id: libraryResources.id })
+        .from(libraryResources)
+        .where(eq(libraryResources.slug, slug))
+        .limit(1);
 
-  await db.insert(libraryResources).values({
-    id: resourceId,
-    slug,
-    title: parsed.title,
-    summary: parsed.summary,
-    contentMarkdown:
-      isArticle && parsed.contentMarkdown ? sanitizeArticleHtml(parsed.contentMarkdown) : null,
-    resourceType: parsed.resourceType,
-    status: "published",
-    publishedAt: isArticle ? now : null,
-    sourceName: parsed.sourceName,
-    sourceUrl: isArticle ? null : parsed.sourceUrl,
-    isOfficialChurchSource: parsed.isOfficialChurchSource,
-    createdByUserId: isArticle ? userId : null,
-    reviewedByUserId: isArticle ? userId : null,
-    reviewedAt: isArticle ? now : null,
-  });
+      if (!existing) {
+        break;
+      }
 
-  if (parsed.uploadedAsset) {
-    await db.insert(libraryAssets).values({
-      id: crypto.randomUUID(),
-      resourceId,
-      kind: parsed.uploadedAsset.kind,
-      title: parsed.uploadedAsset.title,
-      mimeType: parsed.uploadedAsset.mimeType,
-      externalUrl: parsed.uploadedAsset.externalUrl,
-      driveFileId: parsed.uploadedAsset.driveFileId,
-      byteSize: parsed.uploadedAsset.byteSize,
-      status: "ready",
+      slug = `${baseSlug}-${attempt + 1}`;
+    }
+
+    const resourceId = crypto.randomUUID();
+    const isArticle = parsed.resourceType === "article";
+    const now = new Date();
+
+    await db.insert(libraryResources).values({
+      id: resourceId,
+      slug,
+      title: parsed.title,
+      summary: parsed.summary,
+      contentMarkdown:
+        isArticle && parsed.contentMarkdown ? sanitizeArticleHtml(parsed.contentMarkdown) : null,
+      resourceType: parsed.resourceType,
+      status: "published",
+      publishedAt: isArticle ? now : null,
+      sourceName: parsed.sourceName,
+      sourceUrl: isArticle ? null : parsed.sourceUrl,
+      isOfficialChurchSource: parsed.isOfficialChurchSource,
+      createdByUserId: isArticle ? userId : null,
+      reviewedByUserId: isArticle ? userId : null,
+      reviewedAt: isArticle ? now : null,
     });
-  }
 
-  if (parsed.categoryIds.length > 0) {
-    await db.insert(libraryResourceCategories).values(
-      parsed.categoryIds.map((categoryId) => ({
+    if (parsed.uploadedAsset) {
+      await db.insert(libraryAssets).values({
         id: crypto.randomUUID(),
         resourceId,
-        categoryId,
-      })),
-    );
+        kind: parsed.uploadedAsset.kind,
+        title: parsed.uploadedAsset.title,
+        mimeType: parsed.uploadedAsset.mimeType,
+        externalUrl: parsed.uploadedAsset.externalUrl,
+        driveFileId: parsed.uploadedAsset.driveFileId,
+        byteSize: parsed.uploadedAsset.byteSize,
+        status: "ready",
+      });
+    }
+
+    if (parsed.categoryIds.length > 0) {
+      await db.insert(libraryResourceCategories).values(
+        parsed.categoryIds.map((categoryId) => ({
+          id: crypto.randomUUID(),
+          resourceId,
+          categoryId,
+        })),
+      );
+    }
+
+    revalidatePath("/biblioteca");
+    revalidatePath(`/biblioteca/${slug}`);
+
+    return {
+      ok: true as const,
+      id: resourceId,
+      slug,
+    };
+  } catch (error) {
+    console.error("[library:createAndPublish] erro ao publicar", error);
+
+    return {
+      ok: false as const,
+      error: normalizeActionError(error),
+    };
   }
-
-  revalidatePath("/biblioteca");
-  revalidatePath(`/biblioteca/${slug}`);
-
-  return {
-    ok: true as const,
-    id: resourceId,
-    slug,
-  };
 }
 
 export async function attachAssetToLibraryResourceAction(input: unknown) {
