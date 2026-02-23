@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { load } from "cheerio";
@@ -12,7 +12,14 @@ import {
   libraryResources,
 } from "@/db/schema";
 import { acquireIdempotencyLock, createIdempotencyKey } from "@/lib/idempotency";
-import { requireLibraryPublishAccess } from "@/lib/library-access";
+import {
+  assertCanManageLibraryResource,
+  requireLibraryPublishAccess,
+} from "@/lib/library-access";
+import {
+  archiveGoogleDriveFile,
+  restoreGoogleDriveFileFromArchive,
+} from "@/lib/storage/google-drive";
 
 const ARTICLE_ALLOWED_TAGS = [
   "a",
@@ -288,6 +295,44 @@ async function requireUserId(): Promise<string> {
   return session.user.id;
 }
 
+async function createUniqueLibrarySlug(input: {
+  title: string;
+  excludeResourceId?: string;
+}): Promise<string> {
+  const baseSlug = slugify(input.title) || crypto.randomUUID();
+
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const candidate = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`;
+
+    const where = input.excludeResourceId
+      ? and(eq(libraryResources.slug, candidate), ne(libraryResources.id, input.excludeResourceId))
+      : eq(libraryResources.slug, candidate);
+
+    const [existing] = await db
+      .select({ id: libraryResources.id })
+      .from(libraryResources)
+      .where(where)
+      .limit(1);
+
+    if (!existing) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    "Não foi possível gerar um slug único para este título. Tente ajustar o título e publicar novamente.",
+  );
+}
+
+const updatePublishedResourceSchema = createResourceSchema.extend({
+  resourceId: z.string().trim().min(1),
+});
+
+const deleteResourceSchema = z.object({
+  resourceId: z.string().trim().min(1),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
 export async function createLibraryResourceDraftAction(input: unknown) {
   const userId = await requireUserId();
   await requireLibraryPublishAccess(userId);
@@ -309,22 +354,7 @@ export async function createLibraryResourceDraftAction(input: unknown) {
     return { ok: true as const, deduped: true as const };
   }
 
-  const baseSlug = slugify(parsed.title) || crypto.randomUUID();
-  let slug = baseSlug;
-
-  for (let attempt = 1; attempt < 6; attempt += 1) {
-    const [existing] = await db
-      .select({ id: libraryResources.id })
-      .from(libraryResources)
-      .where(eq(libraryResources.slug, slug))
-      .limit(1);
-
-    if (!existing) {
-      break;
-    }
-
-    slug = `${baseSlug}-${attempt + 1}`;
-  }
+  const slug = await createUniqueLibrarySlug({ title: parsed.title });
 
   const resourceId = crypto.randomUUID();
 
@@ -386,22 +416,7 @@ export async function createAndPublishLibraryResourceAction(input: unknown) {
       return { ok: true as const, deduped: true as const };
     }
 
-    const baseSlug = slugify(parsed.title) || crypto.randomUUID();
-    let slug = baseSlug;
-
-    for (let attempt = 1; attempt < 6; attempt += 1) {
-      const [existing] = await db
-        .select({ id: libraryResources.id })
-        .from(libraryResources)
-        .where(eq(libraryResources.slug, slug))
-        .limit(1);
-
-      if (!existing) {
-        break;
-      }
-
-      slug = `${baseSlug}-${attempt + 1}`;
-    }
+    const slug = await createUniqueLibrarySlug({ title: parsed.title });
 
     const resourceId = crypto.randomUUID();
     const isArticle = parsed.resourceType === "article";
@@ -420,7 +435,7 @@ export async function createAndPublishLibraryResourceAction(input: unknown) {
       sourceName: parsed.sourceName,
       sourceUrl: isArticle ? null : parsed.sourceUrl,
       isOfficialChurchSource: parsed.isOfficialChurchSource,
-      createdByUserId: isArticle ? userId : null,
+      createdByUserId: userId,
       reviewedByUserId: isArticle ? userId : null,
       reviewedAt: isArticle ? now : null,
     });
@@ -469,7 +484,7 @@ export async function createAndPublishLibraryResourceAction(input: unknown) {
 
 export async function attachAssetToLibraryResourceAction(input: unknown) {
   const userId = await requireUserId();
-  await requireLibraryPublishAccess(userId);
+  const publishAccess = await requireLibraryPublishAccess(userId);
   const parsed = attachAssetSchema.parse(input);
 
   const [resource] = await db
@@ -486,9 +501,11 @@ export async function attachAssetToLibraryResourceAction(input: unknown) {
     throw new Error("Publicação não encontrada.");
   }
 
-  if (resource.createdByUserId && resource.createdByUserId !== userId) {
-    throw new Error("Você não tem permissão para anexar mídia nesta publicação.");
-  }
+  assertCanManageLibraryResource({
+    userId,
+    createdByUserId: resource.createdByUserId,
+    access: publishAccess,
+  });
 
   const actionKey = createIdempotencyKey("library:asset:attach", {
     ...parsed,
@@ -534,20 +551,28 @@ export async function attachAssetToLibraryResourceAction(input: unknown) {
 
 export async function publishLibraryResourceAction(resourceId: string) {
   const userId = await requireUserId();
-  await requireLibraryPublishAccess(userId);
+  const publishAccess = await requireLibraryPublishAccess(userId);
 
   const [resource] = await db
     .select({
       id: libraryResources.id,
       resourceType: libraryResources.resourceType,
+      slug: libraryResources.slug,
+      createdByUserId: libraryResources.createdByUserId,
     })
     .from(libraryResources)
-    .where(and(eq(libraryResources.id, resourceId), eq(libraryResources.createdByUserId, userId)))
+    .where(eq(libraryResources.id, resourceId))
     .limit(1);
 
   if (!resource) {
     throw new Error("Publicação não encontrada ou sem permissão de edição.");
   }
+
+  assertCanManageLibraryResource({
+    userId,
+    createdByUserId: resource.createdByUserId,
+    access: publishAccess,
+  });
 
   const requiredKindsByType: Partial<Record<string, Array<"pdf" | "docx" | "epub">>> = {
     book: ["pdf", "docx", "epub"],
@@ -587,9 +612,242 @@ export async function publishLibraryResourceAction(resourceId: string) {
       updatedAt: now,
       reviewedByUserId: isArticle ? userId : null,
       reviewedAt: isArticle ? now : null,
-      createdByUserId: isArticle ? userId : null,
+      createdByUserId: resource.createdByUserId ?? userId,
     })
     .where(eq(libraryResources.id, resourceId));
 
   revalidatePath("/biblioteca");
+  revalidatePath(`/biblioteca/${resource.slug}`);
+}
+
+export async function updatePublishedLibraryResourceAction(input: unknown) {
+  const userId = await requireUserId();
+  const publishAccess = await requireLibraryPublishAccess(userId);
+  const parsed = updatePublishedResourceSchema.parse(input);
+
+  const actionKey = createIdempotencyKey("library:resource:update", {
+    ...parsed,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "library:resource:update",
+    actionKey,
+    ttlSeconds: 180,
+  });
+
+  if (!canProcess) {
+    return { ok: true as const, deduped: true as const };
+  }
+
+  const [resource] = await db
+    .select({
+      id: libraryResources.id,
+      slug: libraryResources.slug,
+      status: libraryResources.status,
+      resourceType: libraryResources.resourceType,
+      createdByUserId: libraryResources.createdByUserId,
+    })
+    .from(libraryResources)
+    .where(eq(libraryResources.id, parsed.resourceId))
+    .limit(1);
+
+  if (!resource) {
+    throw new Error("Conteúdo não encontrado.");
+  }
+
+  assertCanManageLibraryResource({
+    userId,
+    createdByUserId: resource.createdByUserId,
+    access: publishAccess,
+  });
+
+  if (resource.resourceType !== parsed.resourceType) {
+    throw new Error("Não é permitido alterar o tipo de conteúdo durante a edição.");
+  }
+
+  const isArticle = parsed.resourceType === "article";
+  const nextSlug = await createUniqueLibrarySlug({
+    title: parsed.title,
+    excludeResourceId: resource.id,
+  });
+  const now = new Date();
+
+  const previousCategories = await db
+    .select({
+      categoryId: libraryResourceCategories.categoryId,
+    })
+    .from(libraryResourceCategories)
+    .where(eq(libraryResourceCategories.resourceId, resource.id));
+
+  try {
+    await db
+      .delete(libraryResourceCategories)
+      .where(eq(libraryResourceCategories.resourceId, resource.id));
+
+    if (parsed.categoryIds.length > 0) {
+      await db.insert(libraryResourceCategories).values(
+        parsed.categoryIds.map((categoryId) => ({
+          id: crypto.randomUUID(),
+          resourceId: resource.id,
+          categoryId,
+        })),
+      );
+    }
+
+    await db
+      .update(libraryResources)
+      .set({
+        slug: nextSlug,
+        title: parsed.title,
+        summary: parsed.summary,
+        contentMarkdown:
+          isArticle && parsed.contentMarkdown ? sanitizeArticleHtml(parsed.contentMarkdown) : null,
+        sourceName: parsed.sourceName,
+        sourceUrl: isArticle ? null : parsed.sourceUrl,
+        isOfficialChurchSource: parsed.isOfficialChurchSource,
+        updatedAt: now,
+      })
+      .where(eq(libraryResources.id, resource.id));
+  } catch (error) {
+    await db
+      .delete(libraryResourceCategories)
+      .where(eq(libraryResourceCategories.resourceId, resource.id));
+
+    if (previousCategories.length > 0) {
+      await db.insert(libraryResourceCategories).values(
+        previousCategories.map((item) => ({
+          id: crypto.randomUUID(),
+          resourceId: resource.id,
+          categoryId: item.categoryId,
+        })),
+      );
+    }
+
+    throw error;
+  }
+
+  revalidatePath("/biblioteca");
+  if (resource.status === "published") {
+    revalidatePath(`/biblioteca/${resource.slug}`);
+    revalidatePath(`/biblioteca/${nextSlug}`);
+  }
+
+  return {
+    ok: true as const,
+    id: resource.id,
+    slug: nextSlug,
+  };
+}
+
+export async function deleteLibraryResourceAction(input: unknown) {
+  const userId = await requireUserId();
+  const publishAccess = await requireLibraryPublishAccess(userId);
+  const parsed = deleteResourceSchema.parse(input);
+
+  const actionKey = createIdempotencyKey("library:resource:delete", {
+    resourceId: parsed.resourceId,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "library:resource:delete",
+    actionKey,
+    ttlSeconds: 180,
+  });
+
+  if (!canProcess) {
+    return { ok: true as const, deduped: true as const };
+  }
+
+  const [resource] = await db
+    .select({
+      id: libraryResources.id,
+      slug: libraryResources.slug,
+      createdByUserId: libraryResources.createdByUserId,
+    })
+    .from(libraryResources)
+    .where(eq(libraryResources.id, parsed.resourceId))
+    .limit(1);
+
+  if (!resource) {
+    throw new Error("Conteúdo não encontrado.");
+  }
+
+  assertCanManageLibraryResource({
+    userId,
+    createdByUserId: resource.createdByUserId,
+    access: publishAccess,
+  });
+
+  const driveAssets = await db
+    .select({
+      assetId: libraryAssets.id,
+      driveFileId: libraryAssets.driveFileId,
+    })
+    .from(libraryAssets)
+    .where(and(eq(libraryAssets.resourceId, resource.id), isNotNull(libraryAssets.driveFileId)));
+
+  const archivedFiles: Array<{ fileId: string; previousParentIds: string[] }> = [];
+
+  try {
+    for (const asset of driveAssets) {
+      const fileId = asset.driveFileId?.trim();
+      if (!fileId) continue;
+
+      const archived = await archiveGoogleDriveFile({
+        fileId,
+        resourceId: resource.id,
+      });
+
+      archivedFiles.push({
+        fileId,
+        previousParentIds: archived.previousParentIds,
+      });
+    }
+  } catch (error) {
+    for (const archived of archivedFiles.reverse()) {
+      try {
+        await restoreGoogleDriveFileFromArchive({
+          fileId: archived.fileId,
+          previousParentIds: archived.previousParentIds,
+        });
+      } catch (restoreError) {
+        console.error(
+          "[library:delete] falha ao restaurar arquivo após erro de arquivamento",
+          archived.fileId,
+          restoreError,
+        );
+      }
+    }
+
+    throw error;
+  }
+
+  try {
+    await db.delete(libraryResources).where(eq(libraryResources.id, resource.id));
+  } catch (error) {
+    for (const archived of archivedFiles.reverse()) {
+      try {
+        await restoreGoogleDriveFileFromArchive({
+          fileId: archived.fileId,
+          previousParentIds: archived.previousParentIds,
+        });
+      } catch (restoreError) {
+        console.error(
+          "[library:delete] falha ao compensar arquivo arquivado após erro no banco",
+          archived.fileId,
+          restoreError,
+        );
+      }
+    }
+
+    throw error;
+  }
+
+  revalidatePath("/biblioteca");
+  revalidatePath(`/biblioteca/${resource.slug}`);
+
+  return { ok: true as const };
 }

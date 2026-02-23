@@ -2,7 +2,7 @@ import { and, desc, eq, isNotNull } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db/client";
 import { libraryAssets, libraryResources } from "@/db/schema";
-import { requireLibraryPublishAccess } from "@/lib/library-access";
+import { canManageLibraryResource, requireLibraryPublishAccess } from "@/lib/library-access";
 import {
   ensureGoogleDriveFileExists,
   isGoogleDriveConfigured,
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Não autenticado.", code: "AUTH_REQUIRED" }, { status: 401 });
     }
 
-    await requireLibraryPublishAccess(session.user.id);
+    const publishAccess = await requireLibraryPublishAccess(session.user.id);
 
     const formData = await request.formData();
     const resourceId = String(formData.get("resourceId") ?? "").trim();
@@ -121,15 +121,15 @@ export async function POST(request: Request) {
         createdByUserId: libraryResources.createdByUserId,
       })
       .from(libraryResources)
-      .where(
-        and(
-          eq(libraryResources.id, resourceId),
-          eq(libraryResources.createdByUserId, session.user.id),
-        ),
-      )
+      .where(eq(libraryResources.id, resourceId))
       .limit(1);
 
-    if (!resource) {
+    if (!resource ||
+      !canManageLibraryResource({
+        userId: session.user.id,
+        createdByUserId: resource.createdByUserId,
+        access: publishAccess,
+      })) {
       return Response.json(
         { error: "Publicação não encontrada ou sem permissão.", code: "RESOURCE_NOT_FOUND_OR_FORBIDDEN" },
         { status: 404 },

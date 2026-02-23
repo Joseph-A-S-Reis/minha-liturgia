@@ -1,6 +1,10 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { AssetViewer } from "@/app/components/library-asset-viewer";
+import { ConfirmSubmitButton } from "@/app/components/confirm-submit-button";
+import { deleteLibraryResourceAction } from "@/app/biblioteca/actions";
+import { canManageLibraryResource, getLibraryPublishAccess } from "@/lib/library-access";
 import { resolveAssetOpenUrl } from "@/lib/library/media";
 import { getPublishedLibraryResourceBySlug } from "@/lib/library-repository";
 
@@ -19,6 +23,10 @@ function formatDate(value: Date | null) {
 
 export default async function BibliotecaResourcePage({ params }: PageProps) {
   const { slug } = await params;
+  const session = await auth();
+  const publishAccess = session?.user?.id
+    ? await getLibraryPublishAccess(session.user.id)
+    : { canPublish: false, isAdmin: false, isCurator: false };
   const resource = await getPublishedLibraryResourceBySlug(slug);
 
   if (!resource) {
@@ -27,6 +35,28 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
 
   const publishedLabel = formatDate(resource.publishedAt);
   const isArticle = resource.resourceType === "article";
+  const canManage =
+    session?.user?.id &&
+    canManageLibraryResource({
+      userId: session.user.id,
+      createdByUserId: resource.createdByUserId,
+      access: publishAccess,
+    });
+
+  async function handleDeleteResource() {
+    "use server";
+
+    const result = await deleteLibraryResourceAction({
+      resourceId: resource.id,
+      idempotencyKey: crypto.randomUUID(),
+    });
+
+    if (!result.ok) {
+      throw new Error("Não foi possível excluir este conteúdo.");
+    }
+
+    redirect("/biblioteca");
+  }
 
   return (
     <main className="flex min-h-screen w-full flex-col gap-6 px-6 py-10 sm:px-10">
@@ -55,6 +85,25 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
         </div>
 
         {resource.summary ? <p className="text-zinc-600">{resource.summary}</p> : null}
+
+        {canManage ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Link
+              href={`/biblioteca/${resource.slug}/editar`}
+              className="inline-flex rounded-lg border border-sky-300 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+            >
+              Editar conteúdo
+            </Link>
+
+            <form action={handleDeleteResource}>
+              <ConfirmSubmitButton
+                label="Excluir conteúdo"
+                confirmMessage="Tem certeza que deseja excluir este conteúdo? Esta ação arquiva os arquivos no Drive e remove a publicação da Biblioteca."
+                className="inline-flex rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+              />
+            </form>
+          </div>
+        ) : null}
       </header>
 
       {resource.categories.length > 0 ? (
@@ -77,9 +126,10 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
         {resource.contentMarkdown ? (
           <div
             className={`library-html-content text-sm leading-7 text-zinc-800 ${
-              isArticle ? "library-html-content--full border-t border-zinc-200 pt-5" : "mt-3"
+              isArticle
+                ? "library-html-content--full border-t border-zinc-200 pt-5 m-0 w-full max-w-none"
+                : "mt-3"
             }`}
-            style={isArticle ? { maxWidth: "100%", margin: 0, width: "100%" } : undefined}
             dangerouslySetInnerHTML={{ __html: resource.contentMarkdown }}
           />
         ) : (

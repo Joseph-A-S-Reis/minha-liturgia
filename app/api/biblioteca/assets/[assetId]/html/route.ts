@@ -4,7 +4,7 @@ import { load } from "cheerio";
 import { auth } from "@/auth";
 import { db } from "@/db/client";
 import { libraryAssets, libraryResources } from "@/db/schema";
-import { getLibraryPublishAccess } from "@/lib/library-access";
+import { canManageLibraryResource, getLibraryPublishAccess } from "@/lib/library-access";
 import { parseHttpUrl } from "@/lib/library/media";
 import { downloadGoogleDriveFile } from "@/lib/storage/google-drive";
 
@@ -131,7 +131,15 @@ export async function GET(
 
       const isCreator = row.resourceCreatorId === userId;
       const publishAccess = await getLibraryPublishAccess(userId);
-      if (!isCreator && !publishAccess.canPublish) {
+      const canAccessDraft =
+        isCreator ||
+        canManageLibraryResource({
+          userId,
+          createdByUserId: row.resourceCreatorId,
+          access: publishAccess,
+        });
+
+      if (!canAccessDraft) {
         return Response.json({ error: "Sem permissão para visualizar este rascunho." }, { status: 403 });
       }
     }

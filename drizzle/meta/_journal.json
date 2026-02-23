@@ -64,6 +64,13 @@
       "when": 1771980000000,
       "tag": "0008_library_article_book_document",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1772146800000,
+      "tag": "0009_library_creator_ownership",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,12 @@ export type LibraryPublishAccess = {
   canPublish: boolean;
 };
 
+type LibraryResourceAccessInput = {
+  userId: string;
+  createdByUserId: string | null;
+  access: LibraryPublishAccess;
+};
+
 export async function getLibraryPublishAccess(userId: string): Promise<LibraryPublishAccess> {
   const [user] = await db
     .select({
@@ -36,4 +42,28 @@ export async function requireLibraryPublishAccess(userId: string) {
   }
 
   return access;
+}
+
+export function canManageLibraryResource(input: LibraryResourceAccessInput): boolean {
+  if (input.access.isAdmin) {
+    return true;
+  }
+
+  if (!input.access.isCurator) {
+    return false;
+  }
+
+  if (!input.createdByUserId) {
+    return false;
+  }
+
+  return input.createdByUserId === input.userId;
+}
+
+export function assertCanManageLibraryResource(input: LibraryResourceAccessInput) {
+  if (!canManageLibraryResource(input)) {
+    throw new Error(
+      "Sem permissão para editar/excluir este conteúdo. Administradores podem gerenciar qualquer publicação; curadores apenas conteúdos próprios.",
+    );
+  }
 }

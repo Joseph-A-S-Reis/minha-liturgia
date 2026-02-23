@@ -470,6 +470,180 @@ export async function downloadGoogleDriveFile(fileId: string): Promise<Buffer> {
   return Buffer.from(arrayBuffer);
 }
 
+type GoogleDriveFileMetadata = {
+  id: string;
+  parents: string[];
+};
+
+export type GoogleDriveArchiveResult = {
+  fileId: string;
+  archiveParentId: string;
+  previousParentIds: string[];
+};
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+async function getGoogleDriveFileMetadata(input: {
+  fileId: string;
+  accessToken: string;
+}): Promise<GoogleDriveFileMetadata> {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(input.fileId)}?fields=id,parents&supportsAllDrives=true`,
+    {
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Falha ao obter metadados do arquivo no Google Drive. ${text || `HTTP ${response.status}`}`,
+    );
+  }
+
+  const payload = (await response.json().catch(() => null)) as
+    | { id?: string; parents?: string[] }
+    | null;
+
+  const id = payload?.id?.trim();
+
+  if (!id) {
+    throw new Error("Resposta inválida do Google Drive ao buscar metadados do arquivo.");
+  }
+
+  return {
+    id,
+    parents: uniqueStrings(payload?.parents ?? []),
+  };
+}
+
+async function updateGoogleDriveFileParents(input: {
+  fileId: string;
+  addParentIds?: string[];
+  removeParentIds?: string[];
+  accessToken: string;
+}) {
+  const addParentIds = uniqueStrings(input.addParentIds ?? []);
+  const removeParentIds = uniqueStrings(input.removeParentIds ?? []);
+
+  if (addParentIds.length === 0 && removeParentIds.length === 0) {
+    return;
+  }
+
+  const params = new URLSearchParams({
+    supportsAllDrives: "true",
+    fields: "id,parents",
+  });
+
+  if (addParentIds.length > 0) {
+    params.set("addParents", addParentIds.join(","));
+  }
+
+  if (removeParentIds.length > 0) {
+    params.set("removeParents", removeParentIds.join(","));
+  }
+
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(input.fileId)}?${params.toString()}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${input.accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `Falha ao mover arquivo no Google Drive. ${text || `HTTP ${response.status}`}`,
+    );
+  }
+}
+
+function getGoogleDriveArchiveFolderId() {
+  return (
+    process.env.GOOGLE_DRIVE_ARCHIVE_FOLDER_ID?.trim() || getGoogleDriveDefaultFolderId()
+  );
+}
+
+export async function archiveGoogleDriveFile(input: {
+  fileId: string;
+  resourceId?: string;
+}): Promise<GoogleDriveArchiveResult> {
+  const fileId = input.fileId.trim();
+  if (!fileId) {
+    throw new Error("ID de arquivo inválido para arquivamento no Google Drive.");
+  }
+
+  const archiveParentId = getGoogleDriveArchiveFolderId();
+  if (!archiveParentId) {
+    throw new Error(
+      "GOOGLE_DRIVE_ARCHIVE_FOLDER_ID (ou GOOGLE_DRIVE_FOLDER_ID) não definido para arquivar arquivos.",
+    );
+  }
+
+  const accessToken = await getGoogleAccessToken();
+  const file = await getGoogleDriveFileMetadata({
+    fileId,
+    accessToken,
+  });
+
+  const previousParentIds = file.parents;
+  const addParentIds = previousParentIds.includes(archiveParentId) ? [] : [archiveParentId];
+  const removeParentIds = previousParentIds.filter((parentId) => parentId !== archiveParentId);
+
+  await updateGoogleDriveFileParents({
+    fileId,
+    addParentIds,
+    removeParentIds,
+    accessToken,
+  });
+
+  return {
+    fileId,
+    archiveParentId,
+    previousParentIds,
+  };
+}
+
+export async function restoreGoogleDriveFileFromArchive(input: {
+  fileId: string;
+  previousParentIds: string[];
+}) {
+  const fileId = input.fileId.trim();
+  if (!fileId) {
+    throw new Error("ID de arquivo inválido para restauração no Google Drive.");
+  }
+
+  const targetParentIds = uniqueStrings(input.previousParentIds);
+  if (targetParentIds.length === 0) {
+    return;
+  }
+
+  const accessToken = await getGoogleAccessToken();
+  const current = await getGoogleDriveFileMetadata({
+    fileId,
+    accessToken,
+  });
+
+  const addParentIds = targetParentIds.filter((parentId) => !current.parents.includes(parentId));
+  const removeParentIds = current.parents.filter((parentId) => !targetParentIds.includes(parentId));
+
+  await updateGoogleDriveFileParents({
+    fileId,
+    addParentIds,
+    removeParentIds,
+    accessToken,
+  });
+}
+
 export type GoogleDriveHealthResult = {
   ok: boolean;
   code:

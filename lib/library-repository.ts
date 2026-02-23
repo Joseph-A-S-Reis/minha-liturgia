@@ -29,6 +29,7 @@ export type LibraryResourceCard = {
 };
 
 export type LibraryResourceDetail = LibraryResourceCard & {
+  createdByUserId: string | null;
   contentMarkdown: string | null;
   sourceUrl: string | null;
   assets: Array<{
@@ -59,6 +60,21 @@ export type LibraryContextSnippet = {
   chunkIndex: number;
   content: string;
   score: number;
+};
+
+export type LibraryManageResource = {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string | null;
+  contentMarkdown: string | null;
+  resourceType: string;
+  status: string;
+  sourceName: string | null;
+  sourceUrl: string | null;
+  isOfficialChurchSource: boolean;
+  createdByUserId: string | null;
+  categoryIds: string[];
 };
 
 export async function getLibraryCategories(section?: string): Promise<LibraryCategory[]> {
@@ -110,6 +126,7 @@ export async function listPublishedLibraryResources(
       slug: libraryResources.slug,
       title: libraryResources.title,
       summary: libraryResources.summary,
+      createdByUserId: libraryResources.createdByUserId,
       resourceType: libraryResources.resourceType,
       coverImageUrl: libraryResources.coverImageUrl,
       isOfficialChurchSource: libraryResources.isOfficialChurchSource,
@@ -222,6 +239,44 @@ export async function getPublishedLibraryResourceBySlug(
     ...resource,
     categories,
     assets,
+  };
+}
+
+export async function getLibraryResourceForManagementBySlug(
+  slug: string,
+): Promise<LibraryManageResource | null> {
+  const [resource] = await db
+    .select({
+      id: libraryResources.id,
+      slug: libraryResources.slug,
+      title: libraryResources.title,
+      summary: libraryResources.summary,
+      contentMarkdown: libraryResources.contentMarkdown,
+      resourceType: libraryResources.resourceType,
+      status: libraryResources.status,
+      sourceName: libraryResources.sourceName,
+      sourceUrl: libraryResources.sourceUrl,
+      isOfficialChurchSource: libraryResources.isOfficialChurchSource,
+      createdByUserId: libraryResources.createdByUserId,
+    })
+    .from(libraryResources)
+    .where(eq(libraryResources.slug, slug))
+    .limit(1);
+
+  if (!resource) {
+    return null;
+  }
+
+  const categories = await db
+    .select({
+      categoryId: libraryResourceCategories.categoryId,
+    })
+    .from(libraryResourceCategories)
+    .where(eq(libraryResourceCategories.resourceId, resource.id));
+
+  return {
+    ...resource,
+    categoryIds: categories.map((item) => item.categoryId),
   };
 }
 
