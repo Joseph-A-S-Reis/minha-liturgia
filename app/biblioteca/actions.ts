@@ -117,7 +117,11 @@ function sanitizeArticleHtml(rawHtml: string) {
   const allowedAttrs = new Set<string>(ARTICLE_ALLOWED_ATTR);
 
   $("*").each((_, element) => {
-    const tag = element.tagName?.toLowerCase();
+    if (element.type !== "tag") {
+      return;
+    }
+
+    const tag = element.name.toLowerCase();
 
     if (!tag) {
       return;
