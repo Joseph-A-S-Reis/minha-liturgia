@@ -33,6 +33,8 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
     notFound();
   }
 
+  const resourceId = resource.id;
+
   const publishedLabel = formatDate(resource.publishedAt);
   const isArticle = resource.resourceType === "article";
   const canManage =
@@ -47,7 +49,7 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
     "use server";
 
     const result = await deleteLibraryResourceAction({
-      resourceId: resource.id,
+      resourceId,
       idempotencyKey: crypto.randomUUID(),
     });
 

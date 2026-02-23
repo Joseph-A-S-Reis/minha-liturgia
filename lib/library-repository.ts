@@ -193,6 +193,7 @@ export async function getPublishedLibraryResourceBySlug(
       slug: libraryResources.slug,
       title: libraryResources.title,
       summary: libraryResources.summary,
+      createdByUserId: libraryResources.createdByUserId,
       resourceType: libraryResources.resourceType,
       coverImageUrl: libraryResources.coverImageUrl,
       isOfficialChurchSource: libraryResources.isOfficialChurchSource,
