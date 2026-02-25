@@ -445,7 +445,7 @@ export const libraryAssets = pgTable(
     title: varchar("title", { length: 180 }),
     mimeType: varchar("mime_type", { length: 120 }),
     externalUrl: text("external_url"),
-    driveFileId: text("drive_file_id"),
+    storageObjectKey: text("storage_object_key"),
     byteSize: integer("byte_size"),
     durationSeconds: integer("duration_seconds"),
     extractedText: text("extracted_text"),

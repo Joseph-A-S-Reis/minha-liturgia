@@ -6,6 +6,7 @@ import {
   libraryResourceCategories,
   libraryResourceChunks,
   libraryResources,
+  users,
 } from "@/db/schema";
 
 export type LibraryCategory = {
@@ -25,6 +26,9 @@ export type LibraryResourceCard = {
   isOfficialChurchSource: boolean;
   sourceName: string | null;
   publishedAt: Date | null;
+  createdAt: Date;
+  authorName: string | null;
+  authorEmail: string | null;
   categories: LibraryCategory[];
 };
 
@@ -38,7 +42,7 @@ export type LibraryResourceDetail = LibraryResourceCard & {
     title: string | null;
     mimeType: string | null;
     externalUrl: string | null;
-    driveFileId: string | null;
+    storageObjectKey: string | null;
     status: string;
   }>;
 };
@@ -132,8 +136,12 @@ export async function listPublishedLibraryResources(
       isOfficialChurchSource: libraryResources.isOfficialChurchSource,
       sourceName: libraryResources.sourceName,
       publishedAt: libraryResources.publishedAt,
+      createdAt: libraryResources.createdAt,
+      authorName: users.name,
+      authorEmail: users.email,
     })
     .from(libraryResources)
+    .leftJoin(users, eq(users.id, libraryResources.createdByUserId))
     .where(and(...whereClauses))
     .orderBy(desc(libraryResources.publishedAt), desc(libraryResources.createdAt))
     .limit(limit);
@@ -201,8 +209,12 @@ export async function getPublishedLibraryResourceBySlug(
       sourceUrl: libraryResources.sourceUrl,
       contentMarkdown: libraryResources.contentMarkdown,
       publishedAt: libraryResources.publishedAt,
+      createdAt: libraryResources.createdAt,
+      authorName: users.name,
+      authorEmail: users.email,
     })
     .from(libraryResources)
+    .leftJoin(users, eq(users.id, libraryResources.createdByUserId))
     .where(and(eq(libraryResources.slug, slug), eq(libraryResources.status, "published")))
     .limit(1);
 
@@ -228,7 +240,7 @@ export async function getPublishedLibraryResourceBySlug(
         title: libraryAssets.title,
         mimeType: libraryAssets.mimeType,
         externalUrl: libraryAssets.externalUrl,
-        driveFileId: libraryAssets.driveFileId,
+        storageObjectKey: libraryAssets.storageObjectKey,
         status: libraryAssets.status,
       })
       .from(libraryAssets)

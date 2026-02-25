@@ -1,4 +1,4 @@
-import { verifyGoogleDriveHealth } from "@/lib/storage/google-drive";
+import { verifyGoogleCloudStorageHealth } from "@/lib/storage/google-cloud-storage";
 
 export const runtime = "nodejs";
 
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
       return Response.json({ error: "Não autorizado.", code: "UNAUTHORIZED" }, { status: 401 });
     }
 
-    const health = await verifyGoogleDriveHealth();
+    const health = await verifyGoogleCloudStorageHealth();
 
     return Response.json(health, {
       status: health.ok ? 200 : 503,
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
         error:
           cause instanceof Error
             ? cause.message
-            : "Falha ao validar integração do Google Drive.",
+            : "Falha ao validar integração do Google Cloud Storage.",
       },
       { status: 500 },
     );

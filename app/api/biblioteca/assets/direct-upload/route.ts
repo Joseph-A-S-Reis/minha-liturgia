@@ -4,11 +4,12 @@ import { db } from "@/db/client";
 import { libraryAssets, libraryResources } from "@/db/schema";
 import { canManageLibraryResource, requireLibraryPublishAccess } from "@/lib/library-access";
 import {
-  ensureGoogleDriveFileExists,
-  isGoogleDriveConfigured,
-  resolveGoogleDriveParentFolderByKind,
-  uploadBinaryToGoogleDrive,
-} from "@/lib/storage/google-drive";
+  ensureGoogleCloudStorageObjectExists,
+  getGoogleCloudStorageFolderByKind,
+  getGoogleCloudStorageResourcesPrefix,
+  isGoogleCloudStorageConfigured,
+  uploadBinaryToGoogleCloudStorage,
+} from "@/lib/storage/google-cloud-storage";
 
 export const runtime = "nodejs";
 
@@ -45,19 +46,6 @@ function getAllowedKindsByResourceType(resourceType: string): AssetKind[] {
       return ["pdf", "docx", "epub"];
     default:
       return [];
-  }
-}
-
-function getResourcesFolderByKind(kind: AssetKind): string {
-  switch (kind) {
-    case "pdf":
-      return "pdfs";
-    case "docx":
-      return "documentos";
-    case "epub":
-      return "ebooks";
-    default:
-      return "documentos";
   }
 }
 
@@ -160,7 +148,7 @@ export async function POST(request: Request) {
     const [existingAsset] = await db
       .select({
         id: libraryAssets.id,
-        driveFileId: libraryAssets.driveFileId,
+        storageObjectKey: libraryAssets.storageObjectKey,
         externalUrl: libraryAssets.externalUrl,
       })
       .from(libraryAssets)
@@ -171,23 +159,23 @@ export async function POST(request: Request) {
           eq(libraryAssets.title, fileEntry.name),
           eq(libraryAssets.mimeType, fileEntry.type || "application/octet-stream"),
           eq(libraryAssets.byteSize, fileEntry.size),
-          isNotNull(libraryAssets.driveFileId),
+          isNotNull(libraryAssets.storageObjectKey),
         ),
       )
       .orderBy(desc(libraryAssets.createdAt))
       .limit(1);
 
-    if (existingAsset?.driveFileId) {
-      const stillExistsInDrive = await ensureGoogleDriveFileExists(existingAsset.driveFileId).catch(
+    if (existingAsset?.storageObjectKey) {
+      const stillExistsInStorage = await ensureGoogleCloudStorageObjectExists(existingAsset.storageObjectKey).catch(
         () => false,
       );
 
-      if (stillExistsInDrive) {
+      if (stillExistsInStorage) {
         return Response.json({
           ok: true,
           assetId: existingAsset.id,
           resourceId,
-          driveFileId: existingAsset.driveFileId,
+          storageObjectKey: existingAsset.storageObjectKey,
           publicUrl: existingAsset.externalUrl,
           processingScheduled: false,
           alreadyExists: true,
@@ -195,37 +183,32 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!isGoogleDriveConfigured()) {
+    if (!isGoogleCloudStorageConfigured()) {
       return Response.json(
         {
-          error: "Configuração do Google Drive incompleta.",
-          code: "DRIVE_CONFIG_MISSING",
+          error: "Configuração do Google Cloud Storage incompleta.",
+          code: "STORAGE_CONFIG_MISSING",
           details:
-            "Defina GOOGLE_DRIVE_FOLDER_ID e credenciais Google (OAuth2: GOOGLE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN ou Service Account).",
+            "Defina GCS_BUCKET_NAME e credenciais de Service Account (GOOGLE_SERVICE_ACCOUNT_EMAIL/GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) ou credenciais padrão da aplicação.",
         },
         { status: 503 },
       );
     }
 
     const objectName = sanitizeFileName(fileEntry.name) || `${Date.now()}.bin`;
-    const resourcesRoot = (process.env.GOOGLE_DRIVE_RESOURCES_PREFIX?.trim() || "recursos").replace(
-      /^\/+|\/+$/g,
-      "",
-    );
-    const resourcesFolder = getResourcesFolderByKind(detectedKind);
-    const storagePath = `${resourcesRoot}/${resourcesFolder}/${resourceId}/${Date.now()}-${objectName}`;
+    const resourcesRoot = getGoogleCloudStorageResourcesPrefix();
+    const resourcesFolder = getGoogleCloudStorageFolderByKind(detectedKind);
+    const objectKey = `${resourcesRoot}/${resourcesFolder}/${resourceId}/${Date.now()}-${objectName}`;
     const buffer = Buffer.from(await fileEntry.arrayBuffer());
-    const kindFolderId = await resolveGoogleDriveParentFolderByKind(detectedKind);
 
-    const uploaded = await uploadBinaryToGoogleDrive({
+    const uploaded = await uploadBinaryToGoogleCloudStorage({
       data: buffer,
-      fileName: `${Date.now()}-${objectName}`,
+      objectKey,
       contentType: fileEntry.type || "application/octet-stream",
-      parentFolderId: kindFolderId,
-      appProperties: {
+      metadata: {
         resourceId: sanitizeAppPropertyValue(resourceId),
         kind: sanitizeAppPropertyValue(detectedKind),
-        storagePath: sanitizeAppPropertyValue(storagePath),
+        objectKey: sanitizeAppPropertyValue(objectKey),
       },
     });
 
@@ -237,8 +220,8 @@ export async function POST(request: Request) {
       kind: detectedKind,
       title: fileEntry.name,
       mimeType: fileEntry.type || "application/octet-stream",
-      driveFileId: uploaded.fileId,
-      externalUrl: uploaded.webViewUrl,
+      storageObjectKey: uploaded.objectKey,
+      externalUrl: uploaded.publicUrl,
       byteSize: fileEntry.size,
       status: "ready",
     });
@@ -249,8 +232,8 @@ export async function POST(request: Request) {
       ok: true,
       assetId,
       resourceId,
-      driveFileId: uploaded.fileId,
-      publicUrl: uploaded.webViewUrl,
+      storageObjectKey: uploaded.objectKey,
+      publicUrl: uploaded.publicUrl,
       processingScheduled: false,
       warningCode: uploaded.permissionError ? "UPLOAD_COMPLETED_WITH_WARNINGS" : undefined,
       warnings: warnings.length > 0 ? warnings : undefined,
@@ -262,17 +245,16 @@ export async function POST(request: Request) {
       return Response.json({ error: message, code: "FORBIDDEN_LIBRARY_PUBLISH_ACCESS" }, { status: 403 });
     }
 
-    const driveFailure =
-      message.includes("Google Drive") ||
-      message.includes("OAuth") ||
+    const storageFailure =
+      message.includes("Cloud Storage") ||
+      message.includes("GCS_BUCKET_NAME") ||
       message.includes("Service Account") ||
-      message.includes("refresh_token") ||
       message.includes("não definido para upload de mídia");
 
     return Response.json(
       {
         error: "Não foi possível enviar o arquivo.",
-        code: driveFailure ? "DRIVE_UPLOAD_FAILED" : "UPLOAD_INTERNAL_ERROR",
+        code: storageFailure ? "STORAGE_UPLOAD_FAILED" : "UPLOAD_INTERNAL_ERROR",
         details: message,
       },
       { status: 500 },

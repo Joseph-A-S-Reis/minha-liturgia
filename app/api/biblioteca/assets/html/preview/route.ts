@@ -3,7 +3,7 @@ import { load } from "cheerio";
 import { auth } from "@/auth";
 import { requireLibraryPublishAccess } from "@/lib/library-access";
 import { parseHttpUrl } from "@/lib/library/media";
-import { downloadGoogleDriveFile } from "@/lib/storage/google-drive";
+import { downloadGoogleCloudStorageObject } from "@/lib/storage/google-cloud-storage";
 
 export const runtime = "nodejs";
 
@@ -58,11 +58,11 @@ function sanitizeReadableHtml(rawHtml: string) {
 }
 
 async function resolveRawHtml(input: {
-  driveFileId: string | null;
+  storageObjectKey: string | null;
   externalUrl: string | null;
 }) {
-  if (input.driveFileId) {
-    const buffer = await downloadGoogleDriveFile(input.driveFileId);
+  if (input.storageObjectKey) {
+    const buffer = await downloadGoogleCloudStorageObject(input.storageObjectKey);
     return buffer.toString("utf-8");
   }
 
@@ -96,14 +96,14 @@ export async function GET(request: Request) {
     await requireLibraryPublishAccess(session.user.id);
 
     const { searchParams } = new URL(request.url);
-    const driveFileId = searchParams.get("driveFileId")?.trim() || null;
+    const storageObjectKey = searchParams.get("storageObjectKey")?.trim() || null;
     const externalUrl = searchParams.get("externalUrl")?.trim() || null;
 
-    if (!driveFileId && !externalUrl) {
-      return Response.json({ error: "driveFileId ou externalUrl é obrigatório." }, { status: 400 });
+    if (!storageObjectKey && !externalUrl) {
+      return Response.json({ error: "storageObjectKey ou externalUrl é obrigatório." }, { status: 400 });
     }
 
-    const rawHtml = await resolveRawHtml({ driveFileId, externalUrl });
+    const rawHtml = await resolveRawHtml({ storageObjectKey, externalUrl });
 
     if (!rawHtml || !rawHtml.trim()) {
       return Response.json({ error: "HTML vazio ou indisponível." }, { status: 422 });

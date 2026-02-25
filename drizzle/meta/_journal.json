@@ -71,6 +71,13 @@
       "when": 1772146800000,
       "tag": "0009_library_creator_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1772310000000,
+      "tag": "0010_google_cloud_storage_assets",
+      "breakpoints": true
     }
   ]
 }

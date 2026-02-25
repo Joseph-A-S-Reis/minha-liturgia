@@ -6,7 +6,7 @@ import { db } from "@/db/client";
 import { libraryAssets, libraryResources } from "@/db/schema";
 import { canManageLibraryResource, getLibraryPublishAccess } from "@/lib/library-access";
 import { parseHttpUrl } from "@/lib/library/media";
-import { downloadGoogleDriveFile } from "@/lib/storage/google-drive";
+import { downloadGoogleCloudStorageObject } from "@/lib/storage/google-cloud-storage";
 
 export const runtime = "nodejs";
 
@@ -61,11 +61,11 @@ function sanitizeReadableHtml(rawHtml: string) {
 }
 
 async function resolveRawHtml(asset: {
-  driveFileId: string | null;
+  storageObjectKey: string | null;
   externalUrl: string | null;
 }) {
-  if (asset.driveFileId) {
-    const buffer = await downloadGoogleDriveFile(asset.driveFileId);
+  if (asset.storageObjectKey) {
+    const buffer = await downloadGoogleCloudStorageObject(asset.storageObjectKey);
     return buffer.toString("utf-8");
   }
 
@@ -101,7 +101,7 @@ export async function GET(
         assetId: libraryAssets.id,
         kind: libraryAssets.kind,
         mimeType: libraryAssets.mimeType,
-        driveFileId: libraryAssets.driveFileId,
+        storageObjectKey: libraryAssets.storageObjectKey,
         externalUrl: libraryAssets.externalUrl,
         resourceStatus: libraryResources.status,
         resourceCreatorId: libraryResources.createdByUserId,
@@ -145,7 +145,7 @@ export async function GET(
     }
 
     const rawHtml = await resolveRawHtml({
-      driveFileId: row.driveFileId,
+      storageObjectKey: row.storageObjectKey,
       externalUrl: row.externalUrl,
     });
 

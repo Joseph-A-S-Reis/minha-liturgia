@@ -17,9 +17,85 @@ import {
   requireLibraryPublishAccess,
 } from "@/lib/library-access";
 import {
-  archiveGoogleDriveFile,
-  restoreGoogleDriveFileFromArchive,
-} from "@/lib/storage/google-drive";
+  deleteGoogleCloudStorageObject,
+  getGoogleCloudStorageFolderByKind,
+  getGoogleCloudStorageResourcesPrefix,
+  moveGoogleCloudStorageObject,
+} from "@/lib/storage/google-cloud-storage";
+
+type PublishableAssetKind = "pdf" | "docx" | "epub";
+
+function isPublishableAssetKind(kind: string): kind is PublishableAssetKind {
+  return kind === "pdf" || kind === "docx" || kind === "epub";
+}
+
+function isPrepublishObjectKey(objectKey: string) {
+  const normalized = objectKey.trim().replace(/^\/+/, "");
+  return normalized.includes("/prepublish/") || normalized.startsWith("prepublish/");
+}
+
+function getObjectFileName(objectKey: string) {
+  const normalized = objectKey.trim().replace(/^\/+/, "");
+  const segments = normalized.split("/").filter(Boolean);
+  return segments.at(-1) ?? `${Date.now()}-${crypto.randomUUID()}.bin`;
+}
+
+function buildFinalObjectKeyByResource(input: {
+  kind: PublishableAssetKind;
+  resourceId: string;
+  sourceObjectKey: string;
+}) {
+  const resourcesRoot = getGoogleCloudStorageResourcesPrefix();
+  const resourcesFolder = getGoogleCloudStorageFolderByKind(input.kind);
+  const fileName = getObjectFileName(input.sourceObjectKey);
+
+  return `${resourcesRoot}/${resourcesFolder}/${input.resourceId}/${fileName}`;
+}
+
+async function moveAssetToFinalPathIfNeeded(input: {
+  kind: string;
+  resourceId: string;
+  storageObjectKey: string;
+  externalUrl?: string | null;
+}) {
+  const sourceObjectKey = input.storageObjectKey.trim();
+  if (!sourceObjectKey) {
+    return {
+      storageObjectKey: sourceObjectKey,
+      externalUrl: input.externalUrl ?? null,
+    };
+  }
+
+  if (!isPublishableAssetKind(input.kind) || !isPrepublishObjectKey(sourceObjectKey)) {
+    return {
+      storageObjectKey: sourceObjectKey,
+      externalUrl: input.externalUrl ?? null,
+    };
+  }
+
+  const destinationObjectKey = buildFinalObjectKeyByResource({
+    kind: input.kind,
+    resourceId: input.resourceId,
+    sourceObjectKey,
+  });
+
+  const moved = await moveGoogleCloudStorageObject({
+    sourceObjectKey,
+    destinationObjectKey,
+  });
+
+  if (moved.permissionError) {
+    console.warn(
+      "[library:publish] upload movido com aviso de permissão pública no Cloud Storage",
+      moved.permissionError,
+    );
+  }
+
+  return {
+    storageObjectKey: moved.objectKey,
+    externalUrl: moved.publicUrl,
+  };
+}
 
 const ARTICLE_ALLOWED_TAGS = [
   "a",
@@ -198,7 +274,7 @@ const createResourceSchema = z
         ctx.addIssue({
           code: "custom",
           path: ["contentMarkdown"],
-          message: "Artigos exigem conteúdo HTML no editor integrado.",
+          message: "Artigos exigem conteúdo no editor de artigo (RTF ou HTML).",
         });
       }
 
@@ -228,7 +304,7 @@ const attachAssetSchema = z.object({
   title: z.string().trim().max(180).optional(),
   mimeType: z.string().trim().max(120).optional(),
   externalUrl: z.url().optional(),
-  driveFileId: z.string().trim().max(200).optional(),
+  storageObjectKey: z.string().trim().max(500).optional(),
   idempotencyKey: z.string().trim().min(8).max(128).optional(),
 });
 
@@ -237,7 +313,7 @@ const uploadedAssetSchema = z.object({
   title: z.string().trim().min(1).max(180),
   mimeType: z.string().trim().min(1).max(120),
   externalUrl: z.url().optional(),
-  driveFileId: z.string().trim().min(1).max(200),
+  storageObjectKey: z.string().trim().min(1).max(500),
   byteSize: z.number().int().positive().max(300 * 1024 * 1024).optional(),
 });
 
@@ -250,7 +326,7 @@ const createAndPublishSchema = createResourceSchema
       ctx.addIssue({
         code: "custom",
         path: ["uploadedAsset"],
-        message: "Artigo não deve receber upload de arquivo. Use apenas o editor HTML.",
+        message: "Artigo não deve receber upload de arquivo. Use o editor de artigo (RTF ou HTML).",
       });
     }
 
@@ -441,14 +517,21 @@ export async function createAndPublishLibraryResourceAction(input: unknown) {
     });
 
     if (parsed.uploadedAsset) {
+      const normalizedAsset = await moveAssetToFinalPathIfNeeded({
+        kind: parsed.uploadedAsset.kind,
+        resourceId,
+        storageObjectKey: parsed.uploadedAsset.storageObjectKey,
+        externalUrl: parsed.uploadedAsset.externalUrl,
+      });
+
       await db.insert(libraryAssets).values({
         id: crypto.randomUUID(),
         resourceId,
         kind: parsed.uploadedAsset.kind,
         title: parsed.uploadedAsset.title,
         mimeType: parsed.uploadedAsset.mimeType,
-        externalUrl: parsed.uploadedAsset.externalUrl,
-        driveFileId: parsed.uploadedAsset.driveFileId,
+        externalUrl: normalizedAsset.externalUrl,
+        storageObjectKey: normalizedAsset.storageObjectKey,
         byteSize: parsed.uploadedAsset.byteSize,
         status: "ready",
       });
@@ -523,8 +606,8 @@ export async function attachAssetToLibraryResourceAction(input: unknown) {
     return { ok: true as const, deduped: true as const };
   }
 
-  if (!parsed.externalUrl && !parsed.driveFileId) {
-    throw new Error("Informe uma URL externa ou um ID de arquivo do Google Drive.");
+  if (!parsed.externalUrl && !parsed.storageObjectKey) {
+    throw new Error("Informe uma URL externa ou a chave do objeto no Cloud Storage.");
   }
 
   const assetId = crypto.randomUUID();
@@ -536,7 +619,7 @@ export async function attachAssetToLibraryResourceAction(input: unknown) {
     title: parsed.title,
     mimeType: parsed.mimeType,
     externalUrl: parsed.externalUrl,
-    driveFileId: parsed.driveFileId,
+    storageObjectKey: parsed.storageObjectKey,
     status: "ready",
   });
 
@@ -589,7 +672,7 @@ export async function publishLibraryResourceAction(resourceId: string) {
         and(
           eq(libraryAssets.resourceId, resource.id),
           inArray(libraryAssets.kind, requiredKinds),
-          or(isNotNull(libraryAssets.externalUrl), isNotNull(libraryAssets.driveFileId)),
+          or(isNotNull(libraryAssets.externalUrl), isNotNull(libraryAssets.storageObjectKey)),
         ),
       )
       .limit(1);
@@ -598,6 +681,44 @@ export async function publishLibraryResourceAction(resourceId: string) {
       throw new Error(
         "Este tipo de conteúdo exige ao menos um arquivo compatível enviado antes da publicação.",
       );
+    }
+  }
+
+  const resourceAssets = await db
+    .select({
+      id: libraryAssets.id,
+      kind: libraryAssets.kind,
+      storageObjectKey: libraryAssets.storageObjectKey,
+      externalUrl: libraryAssets.externalUrl,
+    })
+    .from(libraryAssets)
+    .where(and(eq(libraryAssets.resourceId, resource.id), isNotNull(libraryAssets.storageObjectKey)));
+
+  const nowForAssets = new Date();
+
+  for (const asset of resourceAssets) {
+    const objectKey = asset.storageObjectKey?.trim();
+    if (!objectKey) continue;
+
+    const normalized = await moveAssetToFinalPathIfNeeded({
+      kind: asset.kind,
+      resourceId: resource.id,
+      storageObjectKey: objectKey,
+      externalUrl: asset.externalUrl,
+    });
+
+    if (
+      normalized.storageObjectKey !== objectKey ||
+      (normalized.externalUrl ?? null) !== (asset.externalUrl ?? null)
+    ) {
+      await db
+        .update(libraryAssets)
+        .set({
+          storageObjectKey: normalized.storageObjectKey,
+          externalUrl: normalized.externalUrl,
+          updatedAt: nowForAssets,
+        })
+        .where(eq(libraryAssets.id, asset.id));
     }
   }
 
@@ -781,69 +902,29 @@ export async function deleteLibraryResourceAction(input: unknown) {
     access: publishAccess,
   });
 
-  const driveAssets = await db
+  const storageAssets = await db
     .select({
       assetId: libraryAssets.id,
-      driveFileId: libraryAssets.driveFileId,
+      storageObjectKey: libraryAssets.storageObjectKey,
     })
     .from(libraryAssets)
-    .where(and(eq(libraryAssets.resourceId, resource.id), isNotNull(libraryAssets.driveFileId)));
+    .where(and(eq(libraryAssets.resourceId, resource.id), isNotNull(libraryAssets.storageObjectKey)));
 
-  const archivedFiles: Array<{ fileId: string; previousParentIds: string[] }> = [];
+  await db.delete(libraryResources).where(eq(libraryResources.id, resource.id));
 
-  try {
-    for (const asset of driveAssets) {
-      const fileId = asset.driveFileId?.trim();
-      if (!fileId) continue;
+  for (const asset of storageAssets) {
+    const objectKey = asset.storageObjectKey?.trim();
+    if (!objectKey) continue;
 
-      const archived = await archiveGoogleDriveFile({
-        fileId,
-        resourceId: resource.id,
-      });
-
-      archivedFiles.push({
-        fileId,
-        previousParentIds: archived.previousParentIds,
-      });
+    try {
+      await deleteGoogleCloudStorageObject(objectKey);
+    } catch (storageError) {
+      console.error(
+        "[library:delete] falha ao remover objeto no Cloud Storage após exclusão no banco",
+        objectKey,
+        storageError,
+      );
     }
-  } catch (error) {
-    for (const archived of archivedFiles.reverse()) {
-      try {
-        await restoreGoogleDriveFileFromArchive({
-          fileId: archived.fileId,
-          previousParentIds: archived.previousParentIds,
-        });
-      } catch (restoreError) {
-        console.error(
-          "[library:delete] falha ao restaurar arquivo após erro de arquivamento",
-          archived.fileId,
-          restoreError,
-        );
-      }
-    }
-
-    throw error;
-  }
-
-  try {
-    await db.delete(libraryResources).where(eq(libraryResources.id, resource.id));
-  } catch (error) {
-    for (const archived of archivedFiles.reverse()) {
-      try {
-        await restoreGoogleDriveFileFromArchive({
-          fileId: archived.fileId,
-          previousParentIds: archived.previousParentIds,
-        });
-      } catch (restoreError) {
-        console.error(
-          "[library:delete] falha ao compensar arquivo arquivado após erro no banco",
-          archived.fileId,
-          restoreError,
-        );
-      }
-    }
-
-    throw error;
   }
 
   revalidatePath("/biblioteca");

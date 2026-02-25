@@ -1,18 +1,13 @@
-import { getGoogleDrivePreviewUrl, getGoogleDrivePublicUrl } from "@/lib/storage/google-drive";
-
 export type LibraryAssetLike = {
   kind: string;
   mimeType: string | null;
   externalUrl: string | null;
-  driveFileId: string | null;
+  storageObjectKey: string | null;
 };
 
 export type LibraryViewerKind = "html" | "video" | "audio" | "pdf" | "image" | "fallback";
 
 const EMBED_ALLOWED_HOSTS = new Set([
-  "drive.google.com",
-  "docs.google.com",
-  "lh3.googleusercontent.com",
   "storage.googleapis.com",
 ]);
 
@@ -21,7 +16,7 @@ function hostIsAllowed(hostname: string) {
     return true;
   }
 
-  if (hostname.endsWith(".googleusercontent.com")) {
+  if (hostname.endsWith(".storage.googleapis.com")) {
     return true;
   }
 
@@ -71,14 +66,10 @@ export function resolveLibraryViewerKind(asset: LibraryAssetLike): LibraryViewer
 }
 
 export function resolveAssetOpenUrl(asset: LibraryAssetLike) {
-  return asset.externalUrl ?? (asset.driveFileId ? getGoogleDrivePublicUrl(asset.driveFileId) : null);
+  return asset.externalUrl;
 }
 
 export function resolveAssetEmbedUrl(asset: LibraryAssetLike) {
-  if (asset.driveFileId) {
-    return getGoogleDrivePreviewUrl(asset.driveFileId);
-  }
-
   if (isEmbeddableExternalUrl(asset.externalUrl)) {
     return asset.externalUrl;
   }

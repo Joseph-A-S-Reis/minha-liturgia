@@ -107,26 +107,6 @@ export function AssetViewer({ asset, className }: AssetViewerProps) {
       return <AssetViewerFallback openUrl={openUrl} />;
     }
 
-    if (asset.driveFileId && embedUrl) {
-      return (
-        <div className={mediaClassName}>
-          {isMediaLoading ? <InlineStatus message="Carregando vídeo..." /> : null}
-          <iframe
-            title={`Prévia de ${label}`}
-            src={embedUrl}
-            className="h-[70vh] w-full"
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            onLoad={() => {
-              setIsMediaLoading(false);
-              setMediaError(null);
-            }}
-          />
-          {mediaError ? <InlineStatus tone="error" message={mediaError} /> : null}
-        </div>
-      );
-    }
-
     return (
       <div className={mediaClassName}>
         {isMediaLoading ? <InlineStatus message="Carregando vídeo..." /> : null}
@@ -152,7 +132,7 @@ export function AssetViewer({ asset, className }: AssetViewerProps) {
   }
 
   if (viewerKind === "pdf") {
-    if (asset.driveFileId && embedUrl) {
+    if (embedUrl) {
       return (
         <div className={mediaClassName}>
           {isMediaLoading ? <InlineStatus message="Carregando PDF..." /> : null}
@@ -246,7 +226,7 @@ export function AssetViewer({ asset, className }: AssetViewerProps) {
     return (
       <HtmlBasicPreview
         assetId={asset.id ?? null}
-        driveFileId={asset.driveFileId ?? null}
+        storageObjectKey={asset.storageObjectKey ?? null}
         externalUrl={asset.externalUrl ?? null}
         openUrl={openUrl}
         className={mediaClassName}
@@ -307,13 +287,13 @@ function InlineStatus({
 
 function HtmlBasicPreview({
   assetId,
-  driveFileId,
+  storageObjectKey,
   externalUrl,
   openUrl,
   className,
 }: {
   assetId: string | null;
-  driveFileId: string | null;
+  storageObjectKey: string | null;
   externalUrl: string | null;
   openUrl: string | null;
   className: string;
@@ -339,7 +319,7 @@ function HtmlBasicPreview({
           });
         } else {
           const params = new URLSearchParams();
-          if (driveFileId) params.set("driveFileId", driveFileId);
+          if (storageObjectKey) params.set("storageObjectKey", storageObjectKey);
           if (externalUrl) params.set("externalUrl", externalUrl);
 
           if (!params.toString()) {
@@ -378,7 +358,7 @@ function HtmlBasicPreview({
     return () => {
       cancelled = true;
     };
-  }, [assetId, driveFileId, externalUrl]);
+  }, [assetId, storageObjectKey, externalUrl]);
 
 
   return (

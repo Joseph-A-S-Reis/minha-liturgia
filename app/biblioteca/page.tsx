@@ -17,10 +17,25 @@ type PageProps = {
 
 const RESOURCE_TYPES = [
   { value: "all", label: "Todos" },
-  { value: "article", label: "Artigos" },
-  { value: "book", label: "Livros" },
-  { value: "document", label: "Documentos" },
+  { value: "article", label: "Artigo" },
+  { value: "book", label: "Livro" },
+  { value: "document", label: "Documento" },
 ] as const;
+
+type ResourceTypeFilter = (typeof RESOURCE_TYPES)[number]["value"];
+
+function isResourceTypeFilter(value: string | undefined): value is ResourceTypeFilter {
+  return RESOURCE_TYPES.some((item) => item.value === value);
+}
+
+function formatArticleDate(value: Date | null) {
+  if (!value) return null;
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(value);
+}
 
 export default async function BibliotecaPage({ searchParams }: PageProps) {
   const session = await auth();
@@ -30,8 +45,31 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
   const { q, tipo, aba } = await searchParams;
 
   const query = q?.trim() ?? "";
-  const selectedType = RESOURCE_TYPES.some((item) => item.value === tipo) ? tipo : "all";
+  const selectedType: ResourceTypeFilter = isResourceTypeFilter(tipo) ? tipo : "all";
   const tab = aba === "santa-igreja" ? "santa-igreja" : "geral";
+
+  const buildLibraryHref = (input: {
+    tab: "geral" | "santa-igreja";
+    type: ResourceTypeFilter;
+    query: string;
+  }) => {
+    const params = new URLSearchParams();
+
+    if (input.tab === "santa-igreja") {
+      params.set("aba", "santa-igreja");
+    }
+
+    if (input.type !== "all") {
+      params.set("tipo", input.type);
+    }
+
+    if (input.query.trim()) {
+      params.set("q", input.query.trim());
+    }
+
+    const queryString = params.toString();
+    return queryString ? `/biblioteca?${queryString}` : "/biblioteca";
+  };
 
   let categories: Awaited<ReturnType<typeof getLibraryCategories>> = [];
   let resources: Awaited<ReturnType<typeof listPublishedLibraryResources>> = [];
@@ -85,31 +123,52 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
       </header>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href="/biblioteca"
-            className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
-              tab === "geral"
-                ? "bg-[#003366] text-white"
-                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-            }`}
-          >
-            Biblioteca Geral
-          </Link>
-          <Link
-            href="/biblioteca?aba=santa-igreja"
-            className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
-              tab === "santa-igreja"
-                ? "bg-[#003366] text-white"
-                : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-            }`}
-          >
-            Santa Igreja
-          </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={buildLibraryHref({ tab: "geral", type: selectedType, query })}
+              className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                tab === "geral"
+                  ? "bg-[#003366] text-white"
+                  : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+              }`}
+            >
+              Biblioteca Geral
+            </Link>
+            <Link
+              href={buildLibraryHref({ tab: "santa-igreja", type: selectedType, query })}
+              className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                tab === "santa-igreja"
+                  ? "bg-[#003366] text-white"
+                  : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+              }`}
+            >
+              Santa Igreja
+            </Link>
+          </div>
+
+          <div className="h-7 w-px bg-zinc-200" aria-hidden />
+
+          <div className="flex flex-wrap gap-2">
+            {RESOURCE_TYPES.map((item) => (
+              <Link
+                key={item.value}
+                href={buildLibraryHref({ tab, type: item.value, query })}
+                className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                  selectedType === item.value
+                    ? "bg-sky-700 text-white"
+                    : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                }`}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </div>
         </div>
 
-        <form action="/biblioteca" className="mt-4 grid gap-3 lg:grid-cols-[2fr,1fr,auto]">
+        <form action="/biblioteca" className="mt-4 grid gap-3 lg:grid-cols-[2fr,auto]">
           <input type="hidden" name="aba" value={tab} />
+          <input type="hidden" name="tipo" value={selectedType} />
           <label className="sr-only" htmlFor="busca-biblioteca">
             Buscar por conteúdo
           </label>
@@ -121,22 +180,6 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
             placeholder="Busque por título, tema, santo, doutrina..."
             className="w-full rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm text-zinc-800 outline-none ring-sky-500 focus:ring"
           />
-
-          <label className="sr-only" htmlFor="tipo-biblioteca">
-            Tipo de conteúdo
-          </label>
-          <select
-            id="tipo-biblioteca"
-            name="tipo"
-            defaultValue={selectedType}
-            className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 outline-none ring-sky-500 focus:ring"
-          >
-            {RESOURCE_TYPES.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
 
           <button
             type="submit"
@@ -199,6 +242,14 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
                 {resource.categories.length > 0 ? (
                   <p className="mt-2 text-xs text-zinc-500">
                     {resource.categories.map((item) => item.name).join(" · ")}
+                  </p>
+                ) : null}
+
+                {resource.resourceType === "article" ? (
+                  <p className="mt-2 text-xs text-zinc-600">
+                    Por {resource.authorName ?? resource.authorEmail ?? "Equipe editorial"}
+                    {" · "}
+                    Publicado em {formatArticleDate(resource.publishedAt ?? resource.createdAt) ?? "—"}
                   </p>
                 ) : null}
 

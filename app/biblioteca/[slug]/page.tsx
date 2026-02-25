@@ -37,6 +37,12 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
 
   const publishedLabel = formatDate(resource.publishedAt);
   const isArticle = resource.resourceType === "article";
+  const articlePublishedLabel = isArticle
+    ? formatDate(resource.publishedAt ?? resource.createdAt)
+    : null;
+  const articleAuthorLabel = isArticle
+    ? resource.authorName ?? resource.authorEmail ?? "Equipe editorial"
+    : null;
   const canManage =
     session?.user?.id &&
     canManageLibraryResource({
@@ -79,12 +85,19 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
               Fonte oficial da Igreja
             </span>
           ) : null}
-          {publishedLabel ? (
+          {!isArticle && publishedLabel ? (
             <span className="rounded-full bg-zinc-100 px-2.5 py-1 font-medium text-zinc-600">
               {publishedLabel}
             </span>
           ) : null}
         </div>
+
+        {isArticle ? (
+          <p className="text-sm text-zinc-600">
+            Por <span className="font-medium text-zinc-800">{articleAuthorLabel}</span>
+            {articlePublishedLabel ? <> · Publicado em {articlePublishedLabel}</> : null}
+          </p>
+        ) : null}
 
         {resource.summary ? <p className="text-zinc-600">{resource.summary}</p> : null}
 
@@ -100,7 +113,7 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
             <form action={handleDeleteResource}>
               <ConfirmSubmitButton
                 label="Excluir conteúdo"
-                confirmMessage="Tem certeza que deseja excluir este conteúdo? Esta ação arquiva os arquivos no Drive e remove a publicação da Biblioteca."
+                confirmMessage="Tem certeza que deseja excluir este conteúdo? Esta ação remove os arquivos do Cloud Storage e exclui a publicação da Biblioteca."
                 className="inline-flex rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
               />
             </form>

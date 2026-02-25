@@ -7,7 +7,7 @@ function createCspDirectives() {
 		"base-uri 'self'",
 		"object-src 'none'",
 		"frame-ancestors 'self'",
-		"frame-src 'self' https://drive.google.com https://docs.google.com https://*.googleusercontent.com",
+		"frame-src 'self' https: blob: data:",
 		"worker-src 'self' blob:",
 		"media-src 'self' https: blob: data:",
 		"img-src 'self' https: data: blob:",
@@ -36,8 +36,7 @@ const nextConfig: NextConfig = {
 			{ protocol: "https", hostname: "www.cnbb.org.br" },
 			{ protocol: "http", hostname: "cnbb.org.br" },
 			{ protocol: "https", hostname: "cnbb.org.br" },
-			{ protocol: "https", hostname: "drive.google.com" },
-			{ protocol: "https", hostname: "lh3.googleusercontent.com" },
+			{ protocol: "https", hostname: "storage.googleapis.com" },
 		],
 	},
 	async headers() {

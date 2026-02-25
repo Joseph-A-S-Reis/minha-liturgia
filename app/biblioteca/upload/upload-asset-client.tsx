@@ -132,7 +132,7 @@ export function UploadAssetClient({ resourceId, resourceType }: Props) {
     }
 
     if (uploadPayload.alreadyExists) {
-      setStatus("Este arquivo já existe no Google Drive para este conteúdo. Reutilizando publicação existente.");
+      setStatus("Este arquivo já existe no Cloud Storage para este conteúdo. Reutilizando publicação existente.");
       router.refresh();
       return;
     }

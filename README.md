@@ -152,41 +152,38 @@ O módulo `/biblioteca` já possui fundação de banco para:
 
 - publicações (artigos, livros, vídeos, áudio, documentos)
 - categorias e vínculo publicação-categoria
-- assets de mídia (URL externa ou ID de arquivo no Google Drive)
+- assets de mídia (URL externa ou chave de objeto no Google Cloud Storage)
 - chunks textuais para RAG
 - fila de ingestão editorial (ex.: Santa Igreja)
 
-### Variáveis para Google Drive
+### Variáveis para Google Cloud Storage
 
-Para usar uploads e assets hospedados no Google Drive, configure:
+Para usar uploads e assets hospedados no Cloud Storage, configure:
 
-- `GOOGLE_DRIVE_FOLDER_ID`
-- `GOOGLE_DRIVE_RESOURCES_PREFIX` (opcional; default: `recursos`)
-- `GOOGLE_OAUTH_CLIENT_ID` *(recomendado para conta Google pessoal)*
-- `GOOGLE_OAUTH_CLIENT_SECRET` *(recomendado para conta Google pessoal)*
-- `GOOGLE_OAUTH_REFRESH_TOKEN` *(recomendado para conta Google pessoal)*
+- `GCS_BUCKET_NAME`
+- `GCS_RESOURCES_PREFIX` (opcional; default: `recursos`)
+- `GCS_PUBLIC_BASE_URL` (opcional; default: `https://storage.googleapis.com/<bucket>`)
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL`
 - `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`
+- `GOOGLE_CLOUD_PROJECT_ID` (opcional, recomendado)
 - `LIBRARY_CRON_SECRET` (para proteger endpoints internos da Biblioteca)
 
-Prioridade de autenticação do Drive:
+Prioridade de autenticação:
 
-1. OAuth2 (`GOOGLE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN`)
-2. Service Account (`GOOGLE_SERVICE_ACCOUNT_EMAIL/PRIVATE_KEY`)
+1. Service Account explícita (`GOOGLE_SERVICE_ACCOUNT_EMAIL/PRIVATE_KEY`)
+2. Credenciais padrão da aplicação (ADC), quando disponíveis no ambiente
 
-> Para contas Google pessoais, prefira OAuth2. Service Accounts podem falhar com erro de quota em "Meu Drive".
+> Observação: os fluxos legados de `sign-upload` e `confirm-upload` foram removidos. O upload oficial é `POST /api/biblioteca/assets/direct-upload`, com confirmação direta no Cloud Storage + NeonDB.
 
-> Observação: os fluxos legados de `sign-upload` e `confirm-upload` foram removidos. O upload oficial é `POST /api/biblioteca/assets/direct-upload`, com confirmação direta no Drive + NeonDB.
+Endpoint interno para healthcheck do Cloud Storage:
 
-Endpoint interno para healthcheck do Google Drive:
-
-- `GET /api/internal/library/drive-health`
+- `GET /api/internal/library/storage-health`
 - Header obrigatório: `x-library-secret: <LIBRARY_CRON_SECRET>`
 
 Exemplo:
 
 ```bash
-curl -X GET "https://SEU-DOMINIO/api/internal/library/drive-health" \
+curl -X GET "https://SEU-DOMINIO/api/internal/library/storage-health" \
   -H "x-library-secret: SEU_SEGREDO"
 ```
 

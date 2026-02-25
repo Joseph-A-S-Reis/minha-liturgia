@@ -13,6 +13,7 @@
     "bible:import:ave-maria": "tsx scripts/import-bible-ave-maria.ts"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.17.2",
     "@auth/drizzle-adapter": "^1.11.0",
     "@codemirror/lang-html": "^6.4.11",
     "@neondatabase/serverless": "^1.0.1",
