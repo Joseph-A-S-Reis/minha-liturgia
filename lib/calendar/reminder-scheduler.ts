@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
 import { db } from "@/db/client";
 import {
+  devotionCampaigns,
   eventReminders,
   notificationPreferences,
   notificationDeliveries,
@@ -368,8 +369,10 @@ async function executeDelivery(deliveryId: string): Promise<"sent" | "failed" | 
       channel: notificationDeliveries.channel,
       status: notificationDeliveries.status,
       scheduledFor: notificationDeliveries.scheduledFor,
+      eventSource: userEvents.source,
       eventTitle: userEvents.title,
       eventMessage: userEvents.message,
+      devotionCampaignId: devotionCampaigns.id,
       userEmail: users.email,
       preferenceTimezone: notificationPreferences.timezone,
       preferenceEmailEnabled: notificationPreferences.emailEnabled,
@@ -379,6 +382,7 @@ async function executeDelivery(deliveryId: string): Promise<"sent" | "failed" | 
     })
     .from(notificationDeliveries)
     .leftJoin(userEvents, eq(userEvents.id, notificationDeliveries.eventId))
+    .leftJoin(devotionCampaigns, eq(devotionCampaigns.linkedEventId, userEvents.id))
     .leftJoin(users, eq(users.id, notificationDeliveries.userId))
     .leftJoin(notificationPreferences, eq(notificationPreferences.userId, notificationDeliveries.userId))
     .where(eq(notificationDeliveries.id, deliveryId))
@@ -450,13 +454,18 @@ async function executeDelivery(deliveryId: string): Promise<"sent" | "failed" | 
   }
 
   try {
+    const destinationUrl =
+      row.eventSource === "devotion" && row.devotionCampaignId
+        ? `/minha-devocao/${row.devotionCampaignId}`
+        : "/calendario";
+
     if (row.channel === "push") {
       const summary = await sendPushToUser({
         userId: row.userId,
         payload: {
           title: row.eventTitle ?? "Minha Liturgia",
           body: row.eventMessage ?? "Você tem um lembrete do calendário.",
-          url: "/calendario",
+          url: destinationUrl,
           tag: "calendar-reminder",
         },
         recordDeliveryLog: false,
@@ -471,7 +480,7 @@ async function executeDelivery(deliveryId: string): Promise<"sent" | "failed" | 
               <h2>Lembrete do Minha Liturgia</h2>
               <p><strong>${row.eventTitle ?? "Evento"}</strong></p>
               <p>${row.eventMessage ?? "Seu lembrete está programado para agora."}</p>
-              <p><a href="${buildAbsoluteAppUrl("/calendario")}">Abrir calendário</a></p>
+              <p><a href="${buildAbsoluteAppUrl(destinationUrl)}">Abrir lembrete</a></p>
               <p style="font-size:12px;color:#666">(Enviado por fallback de e-mail porque não havia assinatura push ativa.)</p>
             `,
           });
@@ -491,7 +500,7 @@ async function executeDelivery(deliveryId: string): Promise<"sent" | "failed" | 
           <h2>Lembrete do Minha Liturgia</h2>
           <p><strong>${row.eventTitle ?? "Evento"}</strong></p>
           <p>${row.eventMessage ?? "Seu lembrete está programado para agora."}</p>
-          <p><a href=\"${buildAbsoluteAppUrl("/calendario")}\">Abrir calendário</a></p>
+          <p><a href=\"${buildAbsoluteAppUrl(destinationUrl)}\">Abrir lembrete</a></p>
         `,
       });
     }

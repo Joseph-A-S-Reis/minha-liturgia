@@ -80,8 +80,16 @@ export async function generateMariaReply(input: {
       ? [
           {
             role: "system" as const,
-            content:
-              "Contexto adicional da Biblioteca Católica: use os trechos apenas quando forem relevantes para responder e prefira citar no formato [n]. Se não forem relevantes, responda normalmente sem forçar citações.",
+            content: [
+              "Contexto adicional da Biblioteca Católica:",
+              "- Use os trechos apenas quando forem realmente relevantes para a pergunta.",
+              "- Não trate os trechos como verdade universal sem qualificação; interprete com prudência teológica católica.",
+              "- Sempre que uma afirmação factual vier dos trechos, cite no formato [n] correspondente.",
+              "- Nunca invente citação [n] e nunca cite [n] sem ter usado o trecho.",
+              "- Se os trechos forem insuficientes ou ambíguos, diga isso explicitamente e responda com o que é seguro.",
+              "- Em caso de dúvida factual, prefira admitir limite a " +
+                "completar com suposição.",
+            ].join("\n"),
           },
         ]
       : []),
@@ -110,7 +118,7 @@ export async function generateMariaReply(input: {
         messages,
         stream: false,
         user: input.userId,
-        temperature: 0.6,
+        temperature: 0.3,
       }),
       signal: controller.signal,
     });

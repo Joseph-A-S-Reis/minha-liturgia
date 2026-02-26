@@ -10,6 +10,7 @@ import { logMariaCitationTelemetry } from "@/lib/maria/citation-telemetry";
 const chatSchema = z.object({
   mode: z.enum(MARIA_MODES),
   message: z.string().trim().min(2).max(4_000),
+  context: z.string().trim().max(1_500).optional(),
 });
 
 export const runtime = "nodejs";
@@ -63,15 +64,19 @@ export async function POST(request: Request) {
 
     const minCitationScore = getMariaCitationMinScore();
 
+    const effectiveMessage = parsed.data.context
+      ? `Contexto da campanha:\n${parsed.data.context}\n\nPergunta do usuário:\n${parsed.data.message}`
+      : parsed.data.message;
+
     const libraryContext = await searchPublishedLibraryContextByChunks({
-      query: parsed.data.message,
+      query: effectiveMessage,
       limit: 8,
       minScore: minCitationScore,
     });
 
     const result = await generateMariaReply({
       mode: parsed.data.mode,
-      userMessage: parsed.data.message,
+      userMessage: effectiveMessage,
       userId: session.user.id,
       libraryContext: libraryContext.map((item) => ({
         resourceTitle: item.resourceTitle,

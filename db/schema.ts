@@ -553,3 +553,159 @@ export const mariaCitationEvents = pgTable(
     ),
   }),
 );
+
+export const devotionCampaigns = pgTable(
+  "devotion_campaigns",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    linkedEventId: text("linked_event_id").references(() => userEvents.id, {
+      onDelete: "set null",
+    }),
+    name: varchar("name", { length: 160 }).notNull(),
+    description: text("description"),
+    purpose: varchar("purpose", { length: 140 }).notNull(),
+    type: varchar("type", { length: 24 }).notNull(),
+    durationDays: integer("duration_days").notNull(),
+    startDate: timestamp("start_date", { mode: "date" }).notNull(),
+    timezone: varchar("timezone", { length: 80 }).default("America/Sao_Paulo").notNull(),
+    priestName: varchar("priest_name", { length: 140 }),
+    status: varchar("status", { length: 24 }).default("active").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userStatusStartIdx: index("devotion_campaigns_user_status_start_idx").on(
+      table.userId,
+      table.status,
+      table.startDate,
+    ),
+    userUpdatedIdx: index("devotion_campaigns_user_updated_idx").on(
+      table.userId,
+      table.updatedAt,
+    ),
+  }),
+);
+
+export const devotionDailyLogs = pgTable(
+  "devotion_daily_logs",
+  {
+    id: text("id").primaryKey(),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => devotionCampaigns.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    dayIndex: integer("day_index").notNull(),
+    dateLocal: varchar("date_local", { length: 10 }).notNull(),
+    note: text("note"),
+    checkedInAt: timestamp("checked_in_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    campaignDayUnique: uniqueIndex("devotion_daily_logs_campaign_day_unique").on(
+      table.campaignId,
+      table.dayIndex,
+    ),
+    campaignDateUnique: uniqueIndex("devotion_daily_logs_campaign_date_unique").on(
+      table.campaignId,
+      table.dateLocal,
+    ),
+    userDateIdx: index("devotion_daily_logs_user_date_idx").on(table.userId, table.dateLocal),
+  }),
+);
+
+export const devotionReminders = pgTable(
+  "devotion_reminders",
+  {
+    id: text("id").primaryKey(),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => devotionCampaigns.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    remindBeforeMinutes: integer("remind_before_minutes").notNull(),
+    channel: varchar("channel", { length: 16 }).default("push").notNull(),
+    isEnabled: boolean("is_enabled").default(true).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    campaignReminderUnique: uniqueIndex("devotion_reminders_campaign_channel_minute_unique").on(
+      table.campaignId,
+      table.channel,
+      table.remindBeforeMinutes,
+    ),
+    userEnabledIdx: index("devotion_reminders_user_enabled_idx").on(
+      table.userId,
+      table.isEnabled,
+    ),
+  }),
+);
+
+export const devotionConditions = pgTable(
+  "devotion_conditions",
+  {
+    id: text("id").primaryKey(),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => devotionCampaigns.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 140 }).notNull(),
+    description: text("description"),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    campaignSortUnique: uniqueIndex("devotion_conditions_campaign_sort_unique").on(
+      table.campaignId,
+      table.sortOrder,
+    ),
+    campaignNameIdx: index("devotion_conditions_campaign_name_idx").on(
+      table.campaignId,
+      table.name,
+    ),
+    userIdx: index("devotion_conditions_user_idx").on(table.userId),
+  }),
+);
+
+export const devotionConditionDailyStatuses = pgTable(
+  "devotion_condition_daily_statuses",
+  {
+    id: text("id").primaryKey(),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => devotionCampaigns.id, { onDelete: "cascade" }),
+    conditionId: text("condition_id")
+      .notNull()
+      .references(() => devotionConditions.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    dayIndex: integer("day_index").notNull(),
+    dateLocal: varchar("date_local", { length: 10 }).notNull(),
+    completedAt: timestamp("completed_at", { mode: "date" }).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    conditionDateUnique: uniqueIndex("devotion_condition_daily_statuses_condition_date_unique").on(
+      table.conditionId,
+      table.dateLocal,
+    ),
+    campaignDateIdx: index("devotion_condition_daily_statuses_campaign_date_idx").on(
+      table.campaignId,
+      table.dateLocal,
+    ),
+    userDateIdx: index("devotion_condition_daily_statuses_user_date_idx").on(
+      table.userId,
+      table.dateLocal,
+    ),
+  }),
+);

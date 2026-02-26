@@ -5,6 +5,7 @@ import {
   HomeIcon,
   LibraryIcon,
   PenIcon,
+  SparkIcon,
   UserIcon,
 } from "./icons";
 
@@ -29,6 +30,7 @@ const AUTH_MATCHERS = [
 
 export const navigationItems: NavigationItem[] = [
   { href: "/inicio", label: "Início", icon: HomeIcon },
+  { href: "/minha-devocao", label: "Minha Devoção", icon: SparkIcon },
   { href: "/biblia", label: "Bíblia", icon: BookIcon },
   { href: "/biblioteca", label: "Biblioteca", icon: LibraryIcon },
   { href: "/diario", label: "Diário", icon: PenIcon },

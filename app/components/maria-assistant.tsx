@@ -108,9 +108,21 @@ function getModeLabel(mode: MariaMode) {
   return MODE_OPTIONS.find((option) => option.id === mode)?.label ?? "MarIA";
 }
 
-export function MariaAssistant() {
+type MariaAssistantProps = {
+  title?: string;
+  description?: string;
+  initialMessage?: string;
+  contextText?: string;
+};
+
+export function MariaAssistant({
+  title,
+  description,
+  initialMessage,
+  contextText,
+}: MariaAssistantProps = {}) {
   const [mode, setMode] = useState<MariaMode>("conselheira");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(initialMessage ?? "");
   const [answer, setAnswer] = useState("");
   const [reference, setReference] = useState("");
   const [model, setModel] = useState<string | null>(null);
@@ -144,6 +156,7 @@ export function MariaAssistant() {
           body: JSON.stringify({
             mode,
             message,
+            context: contextText,
           }),
         });
 
@@ -212,10 +225,16 @@ export function MariaAssistant() {
   return (
     <section className="rounded-2xl border border-violet-200 bg-violet-50 p-5">
       <header className="space-y-1">
-        <h2 className="text-lg font-semibold text-violet-900">MarIA · Assistente IA</h2>
+        <h2 className="text-lg font-semibold text-violet-900">{title ?? "MarIA · Assistente IA"}</h2>
         <p className="text-sm text-violet-800">
-          Escolha um modo, faça sua pergunta e, se quiser, salve a resposta no Diário ou em nota de versículo.
+          {description ??
+            "Escolha um modo, faça sua pergunta e, se quiser, salve a resposta no Diário ou em nota de versículo."}
         </p>
+        {contextText ? (
+          <p className="text-[11px] text-violet-700">
+            Contexto da campanha ativo para respostas mais direcionadas.
+          </p>
+        ) : null}
       </header>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
