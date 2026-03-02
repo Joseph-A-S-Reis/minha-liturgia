@@ -25,6 +25,12 @@ a {
   padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
 }
 
+@media (display-mode: standalone) {
+  body {
+    overscroll-behavior-y: none;
+  }
+}
+
 .library-html-content {
   color: #1f2937;
   font-size: 1rem;

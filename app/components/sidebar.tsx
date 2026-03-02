@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LoginIcon } from "./icons";
@@ -16,9 +17,16 @@ export function Sidebar({ isAuthenticated }: SidebarProps) {
   return (
     <aside className="hidden md:flex w-64 bg-[#003366] text-white fixed h-screen left-0 top-0 overflow-y-auto flex-col border-r border-sky-800 shadow-2xl z-40">
       <div className="p-6">
-        <h1 className="text-2xl font-serif font-bold border-b border-white/20 pb-4 mb-6 tracking-wide">
-          Minha Liturgia
-        </h1>
+        <div className="border-b border-white/20 pb-4 mb-6">
+          <Image
+            src="/apple-touch-icon.png"
+            alt="Minha Liturgia"
+            width={72}
+            height={72}
+            className="h-14 w-14 rounded-xl"
+            priority
+          />
+        </div>
         <nav className="flex-1" aria-label="Navegação principal">
           <ul className="space-y-2">
             {navigationItems.map((item) => {

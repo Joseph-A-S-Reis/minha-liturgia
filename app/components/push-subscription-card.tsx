@@ -32,6 +32,12 @@ export function PushSubscriptionCard() {
   const canRequest = useMemo(() => isSupported && Boolean(publicKey), [isSupported, publicKey]);
 
   async function getServiceWorkerRegistration() {
+    const registration = await navigator.serviceWorker.getRegistration("/");
+
+    if (registration) {
+      return registration;
+    }
+
     return navigator.serviceWorker.register("/sw.js", { scope: "/" });
   }
 

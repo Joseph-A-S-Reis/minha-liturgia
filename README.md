@@ -23,6 +23,27 @@ npm run dev
 
 Abra a URL local exibida no terminal após iniciar o servidor.
 
+## PWA (instalação e atualização)
+
+O app suporta instalação como PWA com foco em experiência **standalone mobile**.
+
+### Como instalar
+
+- **Android / Desktop (Chrome, Edge):** use o botão **Instalar** exibido no topo quando disponível.
+- **iPhone / iPad (Safari):** use **Compartilhar → Adicionar à Tela de Início**.
+
+### Comportamento offline e cache
+
+- O app mantém cache de shell e assets estáticos para carregamento resiliente.
+- Rotas sensíveis/autenticadas possuem regras de cache mais restritas.
+- APIs (`/api/*`) e fluxos de autenticação não são cacheados pelo service worker.
+- Em indisponibilidade de rede, o fallback é `public/offline.html`.
+
+### Atualização do app instalado
+
+- Quando uma nova versão do service worker é detectada, o app exibe um aviso de atualização.
+- Toque em **Atualizar** para ativar a versão mais recente sem limpar dados do usuário.
+
 ## Banco de dados (Neon + Drizzle)
 
 1. Configure `DATABASE_URL` no arquivo `.env`.
