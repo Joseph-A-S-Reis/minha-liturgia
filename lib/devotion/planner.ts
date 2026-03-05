@@ -1,4 +1,4 @@
-export const DEVOTION_TYPES = ["penitencia", "jejum", "oracao", "abstinencia"] as const;
+export const DEVOTION_TYPES = ["penitencia", "jejum", "oracao", "abstinencia", "confissao"] as const;
 
 export type DevotionType = (typeof DEVOTION_TYPES)[number];
 
@@ -7,7 +7,76 @@ export const DEVOTION_TYPE_LABELS: Record<DevotionType, string> = {
   jejum: "Jejum",
   oracao: "Oração",
   abstinencia: "Abstinência",
+  confissao: "Confissão",
 };
+
+export const CONFESSION_SIN_TYPES = ["mandamento_de_deus", "mandamento_da_igreja", "outro"] as const;
+
+export type ConfessionSinType = (typeof CONFESSION_SIN_TYPES)[number];
+
+export const CONFESSION_SIN_TYPE_LABELS: Record<ConfessionSinType, string> = {
+  mandamento_de_deus: "Mandamento de Deus",
+  mandamento_da_igreja: "Mandamento da Igreja",
+  outro: "Outro",
+};
+
+export const CONFESSION_GOD_COMMANDMENTS = [
+  "Não amar a Deus sobre todas as coisas",
+  "Tomar o santo nome de Deus em vão",
+  "Não guardar domingos e festas",
+  "Não honrar pai e mãe",
+  "Matar",
+  "Pecar contra a castidade",
+  "Roubar",
+  "Levantar falso testemunho",
+  "Desejar a mulher do próximo",
+  "Cobiçar as coisas alheias",
+] as const;
+
+export const CONFESSION_CHURCH_COMMANDMENTS = [
+  "Participar da Missa aos domingos e festas de guarda",
+  "Confessar-se ao menos uma vez por ano",
+  "Comungar ao menos pela Páscoa da Ressurreição",
+  "Jejuar e abster-se de carne quando manda a Igreja",
+  "Contribuir para as necessidades materiais da Igreja",
+] as const;
+
+export const CONFESSION_NATURE_OPTIONS_BY_TYPE = {
+  mandamento_de_deus: CONFESSION_GOD_COMMANDMENTS,
+  mandamento_da_igreja: CONFESSION_CHURCH_COMMANDMENTS,
+} as const;
+
+export const CONFESSION_NATURE_OPTIONS = [
+  ...CONFESSION_GOD_COMMANDMENTS,
+  ...CONFESSION_CHURCH_COMMANDMENTS,
+] as const;
+
+export type ConfessionNature = (typeof CONFESSION_NATURE_OPTIONS)[number];
+
+export const CONFESSION_ROOT_SINS = [
+  "Soberba",
+  "Avareza",
+  "Luxúria",
+  "Inveja",
+  "Gula",
+  "Ira",
+  "Preguiça",
+] as const;
+
+export type ConfessionRootSin = (typeof CONFESSION_ROOT_SINS)[number];
+
+export const CONFESSION_FREQUENCY_OPTIONS = [
+  "Diariamente",
+  "Semanalmente",
+  "Quinzenalmente",
+  "Mensalmente",
+  "Bimestralmente",
+  "Trimestralmente",
+  "Semestralmente",
+  "Anualmente",
+] as const;
+
+export type ConfessionFrequency = (typeof CONFESSION_FREQUENCY_OPTIONS)[number];
 
 export const MAX_RETROACTIVE_CHECKIN_DAYS = 3;
 

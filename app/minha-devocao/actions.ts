@@ -8,6 +8,8 @@ import { auth } from "@/auth";
 import { db } from "@/db/client";
 import {
   devotionCampaigns,
+  devotionConfessionNotes,
+  devotionConfessionSins,
   devotionConditionDailyStatuses,
   devotionConditions,
   devotionDailyLogs,
@@ -18,6 +20,11 @@ import {
   userEvents,
 } from "@/db/schema";
 import {
+  CONFESSION_FREQUENCY_OPTIONS,
+  CONFESSION_NATURE_OPTIONS_BY_TYPE,
+  CONFESSION_NATURE_OPTIONS,
+  CONFESSION_ROOT_SINS,
+  CONFESSION_SIN_TYPES,
   DEVOTION_TYPES,
   MAX_RETROACTIVE_CHECKIN_DAYS,
   addDaysToIsoDate,
@@ -38,7 +45,7 @@ const createCampaignSchema = z
   .object({
     name: z.string().trim().min(1, "Informe um nome.").max(160),
     description: z.string().trim().max(4_000).optional(),
-    purpose: z.string().trim().min(2, "Informe um propósito.").max(140),
+    purpose: z.string().trim().max(140).optional(),
     type: devotionTypeSchema,
     durationDays: z.coerce.number().int().min(1).max(730),
     startDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -46,6 +53,11 @@ const createCampaignSchema = z
     priestName: z.string().trim().max(140).optional(),
     conditionNames: z.array(z.string().trim().max(140)).max(12).default([]),
     conditionDescriptions: z.array(z.string().trim().max(500)).max(12).default([]),
+    confessionSinTypes: z.array(z.string().trim().max(24)).max(60).default([]),
+    confessionNatures: z.array(z.string().trim().max(180)).max(60).default([]),
+    confessionRootSins: z.array(z.string().trim().max(48)).max(60).default([]),
+    confessionFrequencies: z.array(z.string().trim().max(60)).max(60).default([]),
+    confessionDetails: z.array(z.string().trim().max(2_000)).max(60).default([]),
     reminderMinutes: z.array(z.coerce.number().int().min(0).max(20_160)).max(8).default([]),
     idempotencyKey: z.string().trim().min(8).max(128).optional(),
   });
@@ -69,6 +81,59 @@ function normalizeConditions(names: string[], descriptions: string[]) {
   }
 
   return conditions;
+}
+
+function normalizeConfessionSins(params: {
+  sinTypes: string[];
+  natures: string[];
+  rootSins: string[];
+  frequencies: string[];
+  details: string[];
+}) {
+  const sins: Array<{
+    sinType: (typeof CONFESSION_SIN_TYPES)[number];
+    nature: (typeof CONFESSION_NATURE_OPTIONS)[number] | null;
+    rootSin: (typeof CONFESSION_ROOT_SINS)[number];
+    frequency: string | null;
+    details: string | null;
+    sortOrder: number;
+  }> = [];
+
+  const rows = Math.max(
+    params.sinTypes.length,
+    params.natures.length,
+    params.rootSins.length,
+    params.frequencies.length,
+    params.details.length,
+  );
+
+  for (let index = 0; index < rows; index += 1) {
+    const rawSinType = params.sinTypes[index]?.trim() ?? "";
+    const rawNature = params.natures[index]?.trim() ?? "";
+    const rawRootSin = params.rootSins[index]?.trim() ?? "";
+    const rawFrequency = params.frequencies[index]?.trim() ?? "";
+    const rawDetails = params.details[index]?.trim() ?? "";
+
+    if (!rawSinType || !rawRootSin) {
+      continue;
+    }
+
+    const sinType = confessionSinTypeSchema.parse(rawSinType);
+    const nature = normalizeConfessionNature(sinType, rawNature);
+    const rootSin = confessionRootSinSchema.parse(rawRootSin);
+    const frequency = rawFrequency.length > 0 ? confessionFrequencySchema.parse(rawFrequency) : null;
+
+    sins.push({
+      sinType,
+      nature,
+      rootSin,
+      frequency,
+      details: rawDetails.length > 0 ? rawDetails : null,
+      sortOrder: sins.length,
+    });
+  }
+
+  return sins;
 }
 
 const campaignIdSchema = z.object({
@@ -98,6 +163,87 @@ const completeConditionSchema = z.object({
 const updateRemindersSchema = z.object({
   campaignId: z.string().trim().min(1),
   reminderMinutes: z.array(z.coerce.number().int().min(0).max(20_160)).max(8).default([]),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+const confessionSinTypeSchema = z.enum(CONFESSION_SIN_TYPES);
+const confessionNatureSchema = z.enum(CONFESSION_NATURE_OPTIONS);
+const confessionGodNatureSchema = z.enum(CONFESSION_NATURE_OPTIONS_BY_TYPE.mandamento_de_deus);
+const confessionChurchNatureSchema = z.enum(CONFESSION_NATURE_OPTIONS_BY_TYPE.mandamento_da_igreja);
+const confessionRootSinSchema = z.enum(CONFESSION_ROOT_SINS);
+const confessionFrequencySchema = z.enum(CONFESSION_FREQUENCY_OPTIONS);
+
+function normalizeConfessionNature(
+  sinType: (typeof CONFESSION_SIN_TYPES)[number],
+  rawNature: string,
+): (typeof CONFESSION_NATURE_OPTIONS)[number] | null {
+  const normalizedNature = rawNature.trim();
+
+  if (sinType === "outro") {
+    return null;
+  }
+
+  if (!normalizedNature) {
+    throw new Error("Selecione a natureza para o tipo informado.");
+  }
+
+  if (sinType === "mandamento_de_deus") {
+    return confessionGodNatureSchema.parse(normalizedNature);
+  }
+
+  return confessionChurchNatureSchema.parse(normalizedNature);
+}
+
+const confessionNoteSchema = z.object({
+  campaignId: z.string().trim().min(1),
+  note: z.string().trim().min(1, "Informe a anotação.").max(12_000),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+const updateConfessionNoteSchema = z.object({
+  campaignId: z.string().trim().min(1),
+  noteId: z.string().trim().min(1),
+  note: z.string().trim().min(1, "Informe a anotação.").max(12_000),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+const deleteConfessionNoteSchema = z.object({
+  campaignId: z.string().trim().min(1),
+  noteId: z.string().trim().min(1),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+const confessionSinSchema = z.object({
+  campaignId: z.string().trim().min(1),
+  sinType: confessionSinTypeSchema,
+  nature: z.string().trim().max(180).optional(),
+  rootSin: confessionRootSinSchema,
+  frequency: z.union([confessionFrequencySchema, z.literal("")]).optional(),
+  details: z.string().trim().max(2_000).optional(),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+const updateConfessionSinSchema = z.object({
+  campaignId: z.string().trim().min(1),
+  sinId: z.string().trim().min(1),
+  sinType: confessionSinTypeSchema,
+  nature: z.string().trim().max(180).optional(),
+  rootSin: confessionRootSinSchema,
+  frequency: z.union([confessionFrequencySchema, z.literal("")]).optional(),
+  details: z.string().trim().max(2_000).optional(),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+const toggleConfessionSinSchema = z.object({
+  campaignId: z.string().trim().min(1),
+  sinId: z.string().trim().min(1),
+  isConfessed: z.coerce.boolean(),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+const deleteConfessionSinSchema = z.object({
+  campaignId: z.string().trim().min(1),
+  sinId: z.string().trim().min(1),
   idempotencyKey: z.string().trim().min(8).max(128).optional(),
 });
 
@@ -146,6 +292,20 @@ async function getCampaignOwnedByUser(campaignId: string, userId: string) {
   return campaign ?? null;
 }
 
+async function requireConfessionCampaign(campaignId: string, userId: string) {
+  const campaign = await getCampaignOwnedByUser(campaignId, userId);
+
+  if (!campaign) {
+    throw new Error("Campanha não encontrada.");
+  }
+
+  if (campaign.type !== "confissao") {
+    throw new Error("Esta ação é exclusiva para campanhas de confissão.");
+  }
+
+  return campaign;
+}
+
 async function resolveCampaignDateContext(params: {
   campaignId: string;
   userId: string;
@@ -157,6 +317,10 @@ async function resolveCampaignDateContext(params: {
     throw new Error("Campanha não encontrada.");
   }
 
+  if (campaign.type === "confissao") {
+    throw new Error("Campanhas de confissão não possuem check-in diário.");
+  }
+
   const startDate = normalizeStartDate(campaign.startDate);
   const dayIndex = getDayIndexFromStart(startDate, params.dateLocal);
   const endDate = getCampaignEndIsoDate(startDate, campaign.durationDays);
@@ -166,6 +330,7 @@ async function resolveCampaignDateContext(params: {
   }
 
   return {
+    mode: "daily" as const,
     campaign,
     startDate,
     endDate,
@@ -210,6 +375,11 @@ export async function createDevotionCampaignAction(formData: FormData) {
     priestName: formData.get("priestName"),
     conditionNames: formData.getAll("conditionName"),
     conditionDescriptions: formData.getAll("conditionDescription"),
+    confessionSinTypes: formData.getAll("confessionSinType"),
+    confessionNatures: formData.getAll("confessionNature"),
+    confessionRootSins: formData.getAll("confessionRootSin"),
+    confessionFrequencies: formData.getAll("confessionFrequency"),
+    confessionDetails: formData.getAll("confessionDetails"),
     reminderMinutes: formData.getAll("reminderMinutes"),
     idempotencyKey: formData.get("idempotencyKey"),
   });
@@ -221,15 +391,40 @@ export async function createDevotionCampaignAction(formData: FormData) {
     .limit(1);
 
   const timezone = userPreference?.timezone || parsed.timezone || "America/Sao_Paulo";
-  const conditions = normalizeConditions(parsed.conditionNames, parsed.conditionDescriptions);
+  const isConfession = parsed.type === "confissao";
+  const todayIso = getTodayIsoForTimezone(timezone);
+  const purpose = isConfession
+    ? "Preparação para confissão"
+    : (parsed.purpose ?? "").trim();
+
+  if (!isConfession && purpose.length < 2) {
+    throw new Error("Informe um propósito.");
+  }
+
+  const normalizedDurationDays = isConfession
+    ? Math.max(1, getDayIndexFromStart(todayIso, parsed.startDate))
+    : parsed.durationDays;
+  const conditions = isConfession
+    ? []
+    : normalizeConditions(parsed.conditionNames, parsed.conditionDescriptions);
+  const confessionSins = isConfession
+    ? normalizeConfessionSins({
+        sinTypes: parsed.confessionSinTypes,
+        natures: parsed.confessionNatures,
+        rootSins: parsed.confessionRootSins,
+        frequencies: parsed.confessionFrequencies,
+        details: parsed.confessionDetails,
+      })
+    : [];
   const reminderMinutes = normalizeReminderMinutes(parsed.reminderMinutes);
 
   const actionKey = createIdempotencyKey("devotion:campaign:create", {
     name: parsed.name,
-    purpose: parsed.purpose,
+    purpose,
     type: parsed.type,
-    durationDays: parsed.durationDays,
+    durationDays: normalizedDurationDays,
     conditions,
+    confessionSins,
     startDate: parsed.startDate,
     timezone,
     priestName: parsed.priestName ?? null,
@@ -250,15 +445,16 @@ export async function createDevotionCampaignAction(formData: FormData) {
 
   const campaignId = crypto.randomUUID();
   const linkedEventId = crypto.randomUUID();
-  const startsAt = new Date(`${parsed.startDate}T09:00:00.000Z`);
+  const eventStartIso = isConfession ? todayIso : parsed.startDate;
+  const startsAt = new Date(`${eventStartIso}T09:00:00.000Z`);
   const recurrenceUntil = new Date(startsAt);
-  recurrenceUntil.setUTCDate(recurrenceUntil.getUTCDate() + Math.max(0, parsed.durationDays - 1));
+  recurrenceUntil.setUTCDate(recurrenceUntil.getUTCDate() + Math.max(0, normalizedDurationDays - 1));
 
   await db.insert(userEvents).values({
     id: linkedEventId,
     userId,
     title: `Minha Devoção · ${parsed.name}`,
-    message: parsed.description || `Campanha de ${parsed.type} (${parsed.purpose}).`,
+    message: parsed.description || `Campanha de ${parsed.type} (${purpose}).`,
     startAt: startsAt,
     allDay: true,
     timezone,
@@ -274,9 +470,9 @@ export async function createDevotionCampaignAction(formData: FormData) {
     linkedEventId,
     name: parsed.name,
     description: parsed.description,
-    purpose: parsed.purpose,
+    purpose,
     type: parsed.type,
-    durationDays: parsed.durationDays,
+    durationDays: normalizedDurationDays,
     startDate: new Date(`${parsed.startDate}T00:00:00.000Z`),
     timezone,
     priestName: parsed.type === "penitencia" ? parsed.priestName : null,
@@ -292,6 +488,23 @@ export async function createDevotionCampaignAction(formData: FormData) {
         name: condition.name,
         description: condition.description,
         sortOrder: condition.sortOrder,
+      })),
+    );
+  }
+
+  if (confessionSins.length > 0) {
+    await db.insert(devotionConfessionSins).values(
+      confessionSins.map((sin) => ({
+        id: crypto.randomUUID(),
+        campaignId,
+        userId,
+        sinType: sin.sinType,
+        nature: sin.nature,
+        rootSin: sin.rootSin,
+        frequency: sin.frequency,
+        details: sin.details,
+        sortOrder: sin.sortOrder,
+        updatedAt: new Date(),
       })),
     );
   }
@@ -397,6 +610,19 @@ export async function getUserDevotionCampaignsAction() {
       ),
     );
 
+  const confessionSins = await db
+    .select({
+      campaignId: devotionConfessionSins.campaignId,
+      isConfessed: devotionConfessionSins.isConfessed,
+    })
+    .from(devotionConfessionSins)
+    .where(
+      and(
+        inArray(devotionConfessionSins.campaignId, campaignIds),
+        eq(devotionConfessionSins.userId, userId),
+      ),
+    );
+
   const checkinsByCampaign = new Map<string, number>();
   for (const log of logs) {
     checkinsByCampaign.set(log.campaignId, (checkinsByCampaign.get(log.campaignId) ?? 0) + 1);
@@ -421,15 +647,41 @@ export async function getUserDevotionCampaignsAction() {
     );
   }
 
+  const confessionTotalsMap = new Map<string, number>();
+  const confessionDoneMap = new Map<string, number>();
+  for (const confessionSin of confessionSins) {
+    confessionTotalsMap.set(
+      confessionSin.campaignId,
+      (confessionTotalsMap.get(confessionSin.campaignId) ?? 0) + 1,
+    );
+
+    if (confessionSin.isConfessed) {
+      confessionDoneMap.set(
+        confessionSin.campaignId,
+        (confessionDoneMap.get(confessionSin.campaignId) ?? 0) + 1,
+      );
+    }
+  }
+
   return campaigns.map((campaign) => {
+    const isConfession = campaign.type === "confissao";
     const checkedInDays = checkinsByCampaign.get(campaign.id) ?? 0;
+    const confessionItemsTotal = confessionTotalsMap.get(campaign.id) ?? 0;
+    const confessionItemsConfessed = confessionDoneMap.get(campaign.id) ?? 0;
+    const progressPercent = isConfession
+      ? confessionItemsTotal > 0
+        ? Math.round((confessionItemsConfessed / confessionItemsTotal) * 100)
+        : 0
+      : Math.round((checkedInDays / campaign.durationDays) * 100);
 
     return {
       ...campaign,
       checkedInDays,
-      progressPercent: Math.round((checkedInDays / campaign.durationDays) * 100),
+      progressPercent,
       reminderMinutes: reminderMap.get(campaign.id) ?? [],
       conditionCount: conditionCountMap.get(campaign.id) ?? 0,
+      confessionItemsTotal,
+      confessionItemsConfessed,
     };
   });
 }
@@ -447,6 +699,93 @@ export async function getDevotionCampaignDetailAction(campaignId: string) {
   const startDate = normalizeStartDate(campaign.startDate);
   const todayIso = getTodayIsoForTimezone(campaign.timezone);
 
+  const reminders = await db
+    .select({
+      remindBeforeMinutes: devotionReminders.remindBeforeMinutes,
+      isEnabled: devotionReminders.isEnabled,
+    })
+    .from(devotionReminders)
+    .where(
+      and(
+        eq(devotionReminders.campaignId, campaign.id),
+        eq(devotionReminders.userId, userId),
+        eq(devotionReminders.channel, "push"),
+      ),
+    )
+    .orderBy(asc(devotionReminders.remindBeforeMinutes));
+
+  if (campaign.type === "confissao") {
+    const confessionNotes = await db
+      .select({
+        id: devotionConfessionNotes.id,
+        note: devotionConfessionNotes.note,
+        sortOrder: devotionConfessionNotes.sortOrder,
+        createdAt: devotionConfessionNotes.createdAt,
+        updatedAt: devotionConfessionNotes.updatedAt,
+      })
+      .from(devotionConfessionNotes)
+      .where(
+        and(
+          eq(devotionConfessionNotes.campaignId, campaign.id),
+          eq(devotionConfessionNotes.userId, userId),
+        ),
+      )
+      .orderBy(asc(devotionConfessionNotes.sortOrder), asc(devotionConfessionNotes.createdAt));
+
+    const confessionSins = await db
+      .select({
+        id: devotionConfessionSins.id,
+        sinType: devotionConfessionSins.sinType,
+        nature: devotionConfessionSins.nature,
+        rootSin: devotionConfessionSins.rootSin,
+        frequency: devotionConfessionSins.frequency,
+        details: devotionConfessionSins.details,
+        isConfessed: devotionConfessionSins.isConfessed,
+        sortOrder: devotionConfessionSins.sortOrder,
+        createdAt: devotionConfessionSins.createdAt,
+        updatedAt: devotionConfessionSins.updatedAt,
+      })
+      .from(devotionConfessionSins)
+      .where(
+        and(
+          eq(devotionConfessionSins.campaignId, campaign.id),
+          eq(devotionConfessionSins.userId, userId),
+        ),
+      )
+      .orderBy(asc(devotionConfessionSins.sortOrder), asc(devotionConfessionSins.createdAt));
+
+    const totalItems = confessionSins.length;
+    const confessedItems = confessionSins.filter((item) => item.isConfessed).length;
+
+    const verseOfDay = await getDeterministicVerseOfDay({
+      purpose: campaign.purpose,
+      dayIndex: 1,
+      versionId: "ave-maria",
+    });
+
+    return {
+      mode: "confissao" as const,
+      campaign,
+      startDate,
+      endDate: startDate,
+      todayIso,
+      currentDayIndex: 1,
+      checkedInDays: 0,
+      progressPercent: totalItems > 0 ? Math.round((confessedItems / totalItems) * 100) : 0,
+      reminders: reminders.filter((item) => item.isEnabled).map((item) => item.remindBeforeMinutes),
+      conditions: [],
+      days: [],
+      confessionDate: startDate,
+      confessionNotes,
+      confessionSins,
+      confessionSummary: {
+        totalItems,
+        confessedItems,
+      },
+      verseOfDay,
+    };
+  }
+
   const logs = await db
     .select({
       dayIndex: devotionDailyLogs.dayIndex,
@@ -463,21 +802,6 @@ export async function getDevotionCampaignDetailAction(campaignId: string) {
       ),
     )
     .orderBy(asc(devotionDailyLogs.dayIndex));
-
-  const reminders = await db
-    .select({
-      remindBeforeMinutes: devotionReminders.remindBeforeMinutes,
-      isEnabled: devotionReminders.isEnabled,
-    })
-    .from(devotionReminders)
-    .where(
-      and(
-        eq(devotionReminders.campaignId, campaign.id),
-        eq(devotionReminders.userId, userId),
-        eq(devotionReminders.channel, "push"),
-      ),
-    )
-    .orderBy(asc(devotionReminders.remindBeforeMinutes));
 
   const conditions = await db
     .select({
@@ -840,6 +1164,401 @@ export async function completeDevotionConditionDayAction(formData: FormData) {
   revalidatePath("/minha-devocao");
 }
 
+export async function addConfessionNoteAction(formData: FormData) {
+  const userId = await requireUserId();
+
+  const parsed = confessionNoteSchema.parse({
+    campaignId: formData.get("campaignId"),
+    note: formData.get("note"),
+    idempotencyKey: formData.get("idempotencyKey"),
+  });
+
+  const actionKey = createIdempotencyKey("devotion:confession:note:add", {
+    campaignId: parsed.campaignId,
+    note: parsed.note,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "devotion:confession:note:add",
+    actionKey,
+    ttlSeconds: 120,
+  });
+
+  if (!canProcess) {
+    return;
+  }
+
+  const campaign = await requireConfessionCampaign(parsed.campaignId, userId);
+
+  const [lastNote] = await db
+    .select({ sortOrder: devotionConfessionNotes.sortOrder })
+    .from(devotionConfessionNotes)
+    .where(
+      and(
+        eq(devotionConfessionNotes.campaignId, campaign.id),
+        eq(devotionConfessionNotes.userId, userId),
+      ),
+    )
+    .orderBy(desc(devotionConfessionNotes.sortOrder))
+    .limit(1);
+
+  await db.insert(devotionConfessionNotes).values({
+    id: crypto.randomUUID(),
+    campaignId: campaign.id,
+    userId,
+    note: parsed.note,
+    sortOrder: (lastNote?.sortOrder ?? -1) + 1,
+    updatedAt: new Date(),
+  });
+
+  await db
+    .update(devotionCampaigns)
+    .set({ updatedAt: new Date() })
+    .where(eq(devotionCampaigns.id, campaign.id));
+
+  revalidatePath(`/minha-devocao/${campaign.id}`);
+  revalidatePath("/minha-devocao");
+}
+
+export async function updateConfessionNoteAction(formData: FormData) {
+  const userId = await requireUserId();
+
+  const parsed = updateConfessionNoteSchema.parse({
+    campaignId: formData.get("campaignId"),
+    noteId: formData.get("noteId"),
+    note: formData.get("note"),
+    idempotencyKey: formData.get("idempotencyKey"),
+  });
+
+  const actionKey = createIdempotencyKey("devotion:confession:note:update", {
+    campaignId: parsed.campaignId,
+    noteId: parsed.noteId,
+    note: parsed.note,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "devotion:confession:note:update",
+    actionKey,
+    ttlSeconds: 120,
+  });
+
+  if (!canProcess) {
+    return;
+  }
+
+  const campaign = await requireConfessionCampaign(parsed.campaignId, userId);
+
+  await db
+    .update(devotionConfessionNotes)
+    .set({
+      note: parsed.note,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(devotionConfessionNotes.id, parsed.noteId),
+        eq(devotionConfessionNotes.campaignId, campaign.id),
+        eq(devotionConfessionNotes.userId, userId),
+      ),
+    );
+
+  await db
+    .update(devotionCampaigns)
+    .set({ updatedAt: new Date() })
+    .where(eq(devotionCampaigns.id, campaign.id));
+
+  revalidatePath(`/minha-devocao/${campaign.id}`);
+  revalidatePath("/minha-devocao");
+}
+
+export async function deleteConfessionNoteAction(formData: FormData) {
+  const userId = await requireUserId();
+
+  const parsed = deleteConfessionNoteSchema.parse({
+    campaignId: formData.get("campaignId"),
+    noteId: formData.get("noteId"),
+    idempotencyKey: formData.get("idempotencyKey"),
+  });
+
+  const actionKey = createIdempotencyKey("devotion:confession:note:delete", {
+    campaignId: parsed.campaignId,
+    noteId: parsed.noteId,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "devotion:confession:note:delete",
+    actionKey,
+    ttlSeconds: 120,
+  });
+
+  if (!canProcess) {
+    return;
+  }
+
+  const campaign = await requireConfessionCampaign(parsed.campaignId, userId);
+
+  await db
+    .delete(devotionConfessionNotes)
+    .where(
+      and(
+        eq(devotionConfessionNotes.id, parsed.noteId),
+        eq(devotionConfessionNotes.campaignId, campaign.id),
+        eq(devotionConfessionNotes.userId, userId),
+      ),
+    );
+
+  await db
+    .update(devotionCampaigns)
+    .set({ updatedAt: new Date() })
+    .where(eq(devotionCampaigns.id, campaign.id));
+
+  revalidatePath(`/minha-devocao/${campaign.id}`);
+  revalidatePath("/minha-devocao");
+}
+
+export async function addConfessionSinAction(formData: FormData) {
+  const userId = await requireUserId();
+
+  const parsed = confessionSinSchema.parse({
+    campaignId: formData.get("campaignId"),
+    sinType: formData.get("sinType"),
+    nature: formData.get("nature"),
+    rootSin: formData.get("rootSin"),
+    frequency: formData.get("frequency"),
+    details: formData.get("details"),
+    idempotencyKey: formData.get("idempotencyKey"),
+  });
+
+  const actionKey = createIdempotencyKey("devotion:confession:sin:add", {
+    campaignId: parsed.campaignId,
+    sinType: parsed.sinType,
+    nature: normalizeConfessionNature(parsed.sinType, parsed.nature ?? ""),
+    rootSin: parsed.rootSin,
+    frequency: parsed.frequency ?? null,
+    details: parsed.details ?? null,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "devotion:confession:sin:add",
+    actionKey,
+    ttlSeconds: 120,
+  });
+
+  if (!canProcess) {
+    return;
+  }
+
+  const campaign = await requireConfessionCampaign(parsed.campaignId, userId);
+  const nature = normalizeConfessionNature(parsed.sinType, parsed.nature ?? "");
+
+  const [lastSin] = await db
+    .select({ sortOrder: devotionConfessionSins.sortOrder })
+    .from(devotionConfessionSins)
+    .where(
+      and(
+        eq(devotionConfessionSins.campaignId, campaign.id),
+        eq(devotionConfessionSins.userId, userId),
+      ),
+    )
+    .orderBy(desc(devotionConfessionSins.sortOrder))
+    .limit(1);
+
+  await db.insert(devotionConfessionSins).values({
+    id: crypto.randomUUID(),
+    campaignId: campaign.id,
+    userId,
+    sinType: parsed.sinType,
+    nature,
+    rootSin: parsed.rootSin,
+    frequency: parsed.frequency || null,
+    details: parsed.details || null,
+    sortOrder: (lastSin?.sortOrder ?? -1) + 1,
+    updatedAt: new Date(),
+  });
+
+  await db
+    .update(devotionCampaigns)
+    .set({ updatedAt: new Date() })
+    .where(eq(devotionCampaigns.id, campaign.id));
+
+  revalidatePath(`/minha-devocao/${campaign.id}`);
+  revalidatePath("/minha-devocao");
+}
+
+export async function updateConfessionSinAction(formData: FormData) {
+  const userId = await requireUserId();
+
+  const parsed = updateConfessionSinSchema.parse({
+    campaignId: formData.get("campaignId"),
+    sinId: formData.get("sinId"),
+    sinType: formData.get("sinType"),
+    nature: formData.get("nature"),
+    rootSin: formData.get("rootSin"),
+    frequency: formData.get("frequency"),
+    details: formData.get("details"),
+    idempotencyKey: formData.get("idempotencyKey"),
+  });
+
+  const actionKey = createIdempotencyKey("devotion:confession:sin:update", {
+    campaignId: parsed.campaignId,
+    sinId: parsed.sinId,
+    sinType: parsed.sinType,
+    nature: normalizeConfessionNature(parsed.sinType, parsed.nature ?? ""),
+    rootSin: parsed.rootSin,
+    frequency: parsed.frequency ?? null,
+    details: parsed.details ?? null,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "devotion:confession:sin:update",
+    actionKey,
+    ttlSeconds: 120,
+  });
+
+  if (!canProcess) {
+    return;
+  }
+
+  const campaign = await requireConfessionCampaign(parsed.campaignId, userId);
+  const nature = normalizeConfessionNature(parsed.sinType, parsed.nature ?? "");
+
+  await db
+    .update(devotionConfessionSins)
+    .set({
+      sinType: parsed.sinType,
+      nature,
+      rootSin: parsed.rootSin,
+      frequency: parsed.frequency || null,
+      details: parsed.details || null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(devotionConfessionSins.id, parsed.sinId),
+        eq(devotionConfessionSins.campaignId, campaign.id),
+        eq(devotionConfessionSins.userId, userId),
+      ),
+    );
+
+  await db
+    .update(devotionCampaigns)
+    .set({ updatedAt: new Date() })
+    .where(eq(devotionCampaigns.id, campaign.id));
+
+  revalidatePath(`/minha-devocao/${campaign.id}`);
+  revalidatePath("/minha-devocao");
+}
+
+export async function toggleConfessionSinAction(formData: FormData) {
+  const userId = await requireUserId();
+
+  const parsed = toggleConfessionSinSchema.parse({
+    campaignId: formData.get("campaignId"),
+    sinId: formData.get("sinId"),
+    isConfessed: formData.get("isConfessed") === "true",
+    idempotencyKey: formData.get("idempotencyKey"),
+  });
+
+  const actionKey = createIdempotencyKey("devotion:confession:sin:toggle", {
+    campaignId: parsed.campaignId,
+    sinId: parsed.sinId,
+    isConfessed: parsed.isConfessed,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "devotion:confession:sin:toggle",
+    actionKey,
+    ttlSeconds: 120,
+  });
+
+  if (!canProcess) {
+    return;
+  }
+
+  const campaign = await requireConfessionCampaign(parsed.campaignId, userId);
+
+  await db
+    .update(devotionConfessionSins)
+    .set({
+      isConfessed: parsed.isConfessed,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(devotionConfessionSins.id, parsed.sinId),
+        eq(devotionConfessionSins.campaignId, campaign.id),
+        eq(devotionConfessionSins.userId, userId),
+      ),
+    );
+
+  await db
+    .update(devotionCampaigns)
+    .set({ updatedAt: new Date() })
+    .where(eq(devotionCampaigns.id, campaign.id));
+
+  revalidatePath(`/minha-devocao/${campaign.id}`);
+  revalidatePath("/minha-devocao");
+}
+
+export async function deleteConfessionSinAction(formData: FormData) {
+  const userId = await requireUserId();
+
+  const parsed = deleteConfessionSinSchema.parse({
+    campaignId: formData.get("campaignId"),
+    sinId: formData.get("sinId"),
+    idempotencyKey: formData.get("idempotencyKey"),
+  });
+
+  const actionKey = createIdempotencyKey("devotion:confession:sin:delete", {
+    campaignId: parsed.campaignId,
+    sinId: parsed.sinId,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "devotion:confession:sin:delete",
+    actionKey,
+    ttlSeconds: 120,
+  });
+
+  if (!canProcess) {
+    return;
+  }
+
+  const campaign = await requireConfessionCampaign(parsed.campaignId, userId);
+
+  await db
+    .delete(devotionConfessionSins)
+    .where(
+      and(
+        eq(devotionConfessionSins.id, parsed.sinId),
+        eq(devotionConfessionSins.campaignId, campaign.id),
+        eq(devotionConfessionSins.userId, userId),
+      ),
+    );
+
+  await db
+    .update(devotionCampaigns)
+    .set({ updatedAt: new Date() })
+    .where(eq(devotionCampaigns.id, campaign.id));
+
+  revalidatePath(`/minha-devocao/${campaign.id}`);
+  revalidatePath("/minha-devocao");
+}
+
 export async function updateCampaignReminderTimesAction(formData: FormData) {
   const userId = await requireUserId();
 
@@ -964,14 +1683,18 @@ export async function updateDevotionCampaignAction(formData: FormData) {
     idempotencyKey: formData.get("idempotencyKey"),
   });
 
-  const conditions = normalizeConditions(parsed.conditionNames, parsed.conditionDescriptions);
+  const isConfession = parsed.type === "confissao";
+  const normalizedDurationDays = isConfession ? 1 : parsed.durationDays;
+  const conditions = isConfession
+    ? []
+    : normalizeConditions(parsed.conditionNames, parsed.conditionDescriptions);
   const actionKey = createIdempotencyKey("devotion:campaign:update", {
     campaignId: parsed.campaignId,
     name: parsed.name,
     description: parsed.description ?? null,
     purpose: parsed.purpose,
     type: parsed.type,
-    durationDays: parsed.durationDays,
+    durationDays: normalizedDurationDays,
     startDate: parsed.startDate,
     timezone: parsed.timezone,
     priestName: parsed.type === "penitencia" ? parsed.priestName ?? null : null,
@@ -998,10 +1721,10 @@ export async function updateDevotionCampaignAction(formData: FormData) {
 
   const startAt = new Date(`${parsed.startDate}T09:00:00.000Z`);
   const recurrenceUntil = new Date(startAt);
-  recurrenceUntil.setUTCDate(recurrenceUntil.getUTCDate() + Math.max(0, parsed.durationDays - 1));
+  recurrenceUntil.setUTCDate(recurrenceUntil.getUTCDate() + Math.max(0, normalizedDurationDays - 1));
   const now = new Date();
   const newStartDateIso = parsed.startDate;
-  const newEndDateIso = getCampaignEndIsoDate(newStartDateIso, parsed.durationDays);
+  const newEndDateIso = getCampaignEndIsoDate(newStartDateIso, normalizedDurationDays);
 
   await db
     .update(devotionCampaigns)
@@ -1010,7 +1733,7 @@ export async function updateDevotionCampaignAction(formData: FormData) {
       description: parsed.description,
       purpose: parsed.purpose,
       type: parsed.type,
-      durationDays: parsed.durationDays,
+      durationDays: normalizedDurationDays,
       startDate: new Date(`${parsed.startDate}T00:00:00.000Z`),
       timezone: parsed.timezone,
       priestName: parsed.type === "penitencia" ? parsed.priestName : null,
@@ -1053,98 +1776,141 @@ export async function updateDevotionCampaignAction(formData: FormData) {
     }
   }
 
-  const existingConditions = await db
-    .select({ id: devotionConditions.id, sortOrder: devotionConditions.sortOrder })
-    .from(devotionConditions)
-    .where(
-      and(
-        eq(devotionConditions.campaignId, campaign.id),
-        eq(devotionConditions.userId, userId),
-      ),
-    )
-    .orderBy(asc(devotionConditions.sortOrder));
+  if (isConfession) {
+    await db
+      .delete(devotionConditionDailyStatuses)
+      .where(
+        and(
+          eq(devotionConditionDailyStatuses.campaignId, campaign.id),
+          eq(devotionConditionDailyStatuses.userId, userId),
+        ),
+      );
 
-  for (let index = 0; index < conditions.length; index += 1) {
-    const condition = conditions[index];
-    const existing = existingConditions[index];
-
-    if (existing) {
-      await db
-        .update(devotionConditions)
-        .set({
-          name: condition.name,
-          description: condition.description,
-        })
-        .where(eq(devotionConditions.id, existing.id));
-      continue;
-    }
-
-    await db.insert(devotionConditions).values({
-      id: crypto.randomUUID(),
-      campaignId: campaign.id,
-      userId,
-      name: condition.name,
-      description: condition.description,
-      sortOrder: condition.sortOrder,
-    });
-  }
-
-  const obsoleteConditions = existingConditions.slice(conditions.length);
-  if (obsoleteConditions.length > 0) {
     await db
       .delete(devotionConditions)
-      .where(inArray(devotionConditions.id, obsoleteConditions.map((item) => item.id)));
-  }
-
-  const existingLogs = await db
-    .select({ id: devotionDailyLogs.id, dateLocal: devotionDailyLogs.dateLocal })
-    .from(devotionDailyLogs)
-    .where(and(eq(devotionDailyLogs.campaignId, campaign.id), eq(devotionDailyLogs.userId, userId)));
-
-  for (const log of existingLogs) {
-    const dayIndex = getDayIndexFromStart(newStartDateIso, log.dateLocal);
-    const outsideRange = dayIndex < 1 || dayIndex > parsed.durationDays || log.dateLocal > newEndDateIso;
-
-    if (outsideRange) {
-      await db.delete(devotionDailyLogs).where(eq(devotionDailyLogs.id, log.id));
-      continue;
-    }
+      .where(and(eq(devotionConditions.campaignId, campaign.id), eq(devotionConditions.userId, userId)));
 
     await db
-      .update(devotionDailyLogs)
-      .set({
-        dayIndex,
-        updatedAt: now,
-      })
-      .where(eq(devotionDailyLogs.id, log.id));
-  }
+      .delete(devotionDailyLogs)
+      .where(and(eq(devotionDailyLogs.campaignId, campaign.id), eq(devotionDailyLogs.userId, userId)));
+  } else {
+    const existingConditions = await db
+      .select({ id: devotionConditions.id, sortOrder: devotionConditions.sortOrder })
+      .from(devotionConditions)
+      .where(
+        and(
+          eq(devotionConditions.campaignId, campaign.id),
+          eq(devotionConditions.userId, userId),
+        ),
+      )
+      .orderBy(asc(devotionConditions.sortOrder));
 
-  const existingConditionStatuses = await db
-    .select({ id: devotionConditionDailyStatuses.id, dateLocal: devotionConditionDailyStatuses.dateLocal })
-    .from(devotionConditionDailyStatuses)
-    .where(
-      and(
-        eq(devotionConditionDailyStatuses.campaignId, campaign.id),
-        eq(devotionConditionDailyStatuses.userId, userId),
-      ),
-    );
+    for (let index = 0; index < conditions.length; index += 1) {
+      const condition = conditions[index];
+      const existing = existingConditions[index];
 
-  for (const status of existingConditionStatuses) {
-    const dayIndex = getDayIndexFromStart(newStartDateIso, status.dateLocal);
-    const outsideRange = dayIndex < 1 || dayIndex > parsed.durationDays || status.dateLocal > newEndDateIso;
+      if (existing) {
+        await db
+          .update(devotionConditions)
+          .set({
+            name: condition.name,
+            description: condition.description,
+          })
+          .where(eq(devotionConditions.id, existing.id));
+        continue;
+      }
 
-    if (outsideRange) {
-      await db.delete(devotionConditionDailyStatuses).where(eq(devotionConditionDailyStatuses.id, status.id));
-      continue;
+      await db.insert(devotionConditions).values({
+        id: crypto.randomUUID(),
+        campaignId: campaign.id,
+        userId,
+        name: condition.name,
+        description: condition.description,
+        sortOrder: condition.sortOrder,
+      });
     }
 
+    const obsoleteConditions = existingConditions.slice(conditions.length);
+    if (obsoleteConditions.length > 0) {
+      await db
+        .delete(devotionConditions)
+        .where(inArray(devotionConditions.id, obsoleteConditions.map((item) => item.id)));
+    }
+
+    const existingLogs = await db
+      .select({ id: devotionDailyLogs.id, dateLocal: devotionDailyLogs.dateLocal })
+      .from(devotionDailyLogs)
+      .where(and(eq(devotionDailyLogs.campaignId, campaign.id), eq(devotionDailyLogs.userId, userId)));
+
+    for (const log of existingLogs) {
+      const dayIndex = getDayIndexFromStart(newStartDateIso, log.dateLocal);
+      const outsideRange =
+        dayIndex < 1 || dayIndex > normalizedDurationDays || log.dateLocal > newEndDateIso;
+
+      if (outsideRange) {
+        await db.delete(devotionDailyLogs).where(eq(devotionDailyLogs.id, log.id));
+        continue;
+      }
+
+      await db
+        .update(devotionDailyLogs)
+        .set({
+          dayIndex,
+          updatedAt: now,
+        })
+        .where(eq(devotionDailyLogs.id, log.id));
+    }
+
+    const existingConditionStatuses = await db
+      .select({ id: devotionConditionDailyStatuses.id, dateLocal: devotionConditionDailyStatuses.dateLocal })
+      .from(devotionConditionDailyStatuses)
+      .where(
+        and(
+          eq(devotionConditionDailyStatuses.campaignId, campaign.id),
+          eq(devotionConditionDailyStatuses.userId, userId),
+        ),
+      );
+
+    for (const status of existingConditionStatuses) {
+      const dayIndex = getDayIndexFromStart(newStartDateIso, status.dateLocal);
+      const outsideRange =
+        dayIndex < 1 || dayIndex > normalizedDurationDays || status.dateLocal > newEndDateIso;
+
+      if (outsideRange) {
+        await db
+          .delete(devotionConditionDailyStatuses)
+          .where(eq(devotionConditionDailyStatuses.id, status.id));
+        continue;
+      }
+
+      await db
+        .update(devotionConditionDailyStatuses)
+        .set({
+          dayIndex,
+          updatedAt: now,
+        })
+        .where(eq(devotionConditionDailyStatuses.id, status.id));
+    }
+  }
+
+  if (campaign.type === "confissao" && parsed.type !== "confissao") {
     await db
-      .update(devotionConditionDailyStatuses)
-      .set({
-        dayIndex,
-        updatedAt: now,
-      })
-      .where(eq(devotionConditionDailyStatuses.id, status.id));
+      .delete(devotionConfessionSins)
+      .where(
+        and(
+          eq(devotionConfessionSins.campaignId, campaign.id),
+          eq(devotionConfessionSins.userId, userId),
+        ),
+      );
+
+    await db
+      .delete(devotionConfessionNotes)
+      .where(
+        and(
+          eq(devotionConfessionNotes.campaignId, campaign.id),
+          eq(devotionConfessionNotes.userId, userId),
+        ),
+      );
   }
 
   revalidatePath(`/minha-devocao/${campaign.id}`);

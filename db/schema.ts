@@ -1,5 +1,7 @@
 import {
   boolean,
+  customType,
+  date,
   index,
   integer,
   pgTable,
@@ -28,6 +30,12 @@ export const users = pgTable(
     emailUnique: uniqueIndex("users_email_unique").on(table.email),
   }),
 );
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const accounts = pgTable(
   "accounts",
@@ -99,6 +107,56 @@ export const journalEntries = pgTable(
   },
   (table) => ({
     userCreatedIdx: index("journal_entries_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const journalMemories = pgTable(
+  "journal_memories",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 120 }).notNull(),
+    memoryDate: date("memory_date").notNull(),
+    description: text("description").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userMemoryDateIdx: index("journal_memories_user_memory_date_idx").on(
+      table.userId,
+      table.memoryDate,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const journalMemoryAttachments = pgTable(
+  "journal_memory_attachments",
+  {
+    id: text("id").primaryKey(),
+    memoryId: text("memory_id")
+      .notNull()
+      .references(() => journalMemories.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    fileName: varchar("file_name", { length: 260 }).notNull(),
+    mimeType: varchar("mime_type", { length: 120 }).notNull(),
+    fileSize: integer("file_size").notNull(),
+    data: bytea("data").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    memoryCreatedIdx: index("journal_memory_attachments_memory_created_idx").on(
+      table.memoryId,
+      table.createdAt,
+    ),
+    userCreatedIdx: index("journal_memory_attachments_user_created_idx").on(
       table.userId,
       table.createdAt,
     ),
@@ -707,5 +765,69 @@ export const devotionConditionDailyStatuses = pgTable(
       table.userId,
       table.dateLocal,
     ),
+  }),
+);
+
+export const devotionConfessionNotes = pgTable(
+  "devotion_confession_notes",
+  {
+    id: text("id").primaryKey(),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => devotionCampaigns.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    note: text("note").notNull(),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    campaignSortUnique: uniqueIndex("devotion_confession_notes_campaign_sort_unique").on(
+      table.campaignId,
+      table.sortOrder,
+    ),
+    campaignCreatedIdx: index("devotion_confession_notes_campaign_created_idx").on(
+      table.campaignId,
+      table.createdAt,
+    ),
+    userUpdatedIdx: index("devotion_confession_notes_user_updated_idx").on(
+      table.userId,
+      table.updatedAt,
+    ),
+  }),
+);
+
+export const devotionConfessionSins = pgTable(
+  "devotion_confession_sins",
+  {
+    id: text("id").primaryKey(),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => devotionCampaigns.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sinType: varchar("sin_type", { length: 24 }).notNull(),
+    nature: varchar("nature", { length: 180 }),
+    rootSin: varchar("root_sin", { length: 48 }).notNull(),
+    frequency: varchar("frequency", { length: 60 }),
+    details: text("details"),
+    isConfessed: boolean("is_confessed").default(false).notNull(),
+    sortOrder: integer("sort_order").default(0).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    campaignSortUnique: uniqueIndex("devotion_confession_sins_campaign_sort_unique").on(
+      table.campaignId,
+      table.sortOrder,
+    ),
+    campaignConfessedIdx: index("devotion_confession_sins_campaign_confessed_idx").on(
+      table.campaignId,
+      table.isConfessed,
+    ),
+    userUpdatedIdx: index("devotion_confession_sins_user_updated_idx").on(table.userId, table.updatedAt),
   }),
 );

@@ -1,0 +1,104 @@
+{
+  "latest": "0.11.0",
+  "releases": [
+    {
+      "version": "0.11.0",
+      "releasedAt": "2026-03-05",
+      "title": "Versão 11 — Recordações, Confissão Estruturada e Changelog no PWA",
+      "highlights": [
+        "Novo módulo de Recordações no Diário com anexos privados (imagens, PDF e DOCX).",
+        "Novo tipo de campanha devocional para Confissão com exame estruturado e acompanhamento de pecados confessados.",
+        "Versionamento do PWA com notas de versão exibidas automaticamente após atualização."
+      ],
+      "changes": [
+        {
+          "category": "feature",
+          "title": "Recordações no Diário com anexos privados",
+          "description": "Implementado fluxo completo de criação, edição, listagem e exclusão de recordações em /diario/recordacoes com persistência no banco e proteção por usuário autenticado."
+        },
+        {
+          "category": "feature",
+          "title": "Galeria e visualização de anexos",
+          "description": "Adicionado suporte a anexos em recordações (até 5 por item), com galeria interativa, visualização inline e rota segura para acesso a arquivos privados do usuário."
+        },
+        {
+          "category": "feature",
+          "title": "Campanha de Confissão em Minha Devoção",
+          "description": "Criado novo tipo de campanha com regras próprias de planejamento, sem check-in diário, com gestão de anotações e foco em preparação para confissão."
+        },
+        {
+          "category": "feature",
+          "title": "Tabela estruturada de pecados para exame de consciência",
+          "description": "Incluída gestão de pecados por campanha com tipo, natureza, raiz, frequência, detalhes e marcação de status de confissão para acompanhamento espiritual."
+        },
+        {
+          "category": "improvement",
+          "title": "Aprimoramentos em formulários e UX de submissão",
+          "description": "InteractiveSubmitButton recebeu suporte a pending otimista e envio por atributo form, melhorando feedback visual e flexibilidade nas telas de Diário e Minha Devoção."
+        },
+        {
+          "category": "improvement",
+          "title": "Destaque da área de Recordações no Diário",
+          "description": "A página principal do Diário foi atualizada com chamada visual para a nova experiência de Recordações, facilitando descoberta da funcionalidade."
+        },
+        {
+          "category": "feature",
+          "title": "APIs de versão e changelog",
+          "description": "Adicionados os endpoints públicos /api/version/current e /api/version/changelog para alimentar o sistema de atualização com metadados de release e notas completas."
+        },
+        {
+          "category": "feature",
+          "title": "Pop-up de notas após atualização do app",
+          "description": "O PWA agora exibe modal com notas da versão após reload da atualização, com controle de exibição única por versão no navegador."
+        },
+        {
+          "category": "improvement",
+          "title": "Atualização de cache do Service Worker",
+          "description": "Versões de cache do Service Worker foram incrementadas para garantir distribuição confiável da nova release e invalidação de shell/runtime antigos."
+        },
+        {
+          "category": "improvement",
+          "title": "Evolução do esquema e migrações Drizzle",
+          "description": "Novas tabelas e migrações para recordações e trilhas de confissão foram adicionadas ao schema, com índices e constraints para performance e integridade."
+        },
+        {
+          "category": "improvement",
+          "title": "Documentação de release e operação",
+          "description": "README atualizado com fluxo de changelog, endpoints de versão e checklist operacional para publicar futuras atualizações do PWA."
+        }
+      ]
+    },
+    {
+      "version": "0.1.0",
+      "releasedAt": "2026-03-05",
+      "title": "Fundação PWA e experiência litúrgica integrada",
+      "highlights": [
+        "Atualização de aplicativo com Service Worker e botão de atualização no app instalado.",
+        "Módulos principais integrados: Bíblia, Diário espiritual, Calendário e Biblioteca.",
+        "Base de notificações push e lembretes recorrentes com regras de horário silencioso."
+      ],
+      "changes": [
+        {
+          "category": "feature",
+          "title": "Leitura bíblica canônica",
+          "description": "Navegação por versão, livro e capítulo com base preparada para importação completa do texto bíblico."
+        },
+        {
+          "category": "feature",
+          "title": "Diário espiritual com persistência robusta",
+          "description": "Fluxo DB-first com idempotência e fallback local para contingência de rede."
+        },
+        {
+          "category": "feature",
+          "title": "Calendário com lembretes",
+          "description": "Eventos, recorrência e entregas por push/e-mail com processamento interno em fila."
+        },
+        {
+          "category": "improvement",
+          "title": "Offline e cache controlado",
+          "description": "Cache de shell/assets para resiliência e proteção reforçada em rotas privadas e APIs sensíveis."
+        }
+      ]
+    }
+  ]
+}

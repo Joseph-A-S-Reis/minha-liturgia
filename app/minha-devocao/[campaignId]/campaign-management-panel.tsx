@@ -44,6 +44,7 @@ export function CampaignManagementPanel({
 }: CampaignManagementPanelProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [campaignType, setCampaignType] = useState<DevotionType>(campaign.type as DevotionType);
+  const isConfession = campaignType === "confissao";
   const [conditionRows, setConditionRows] = useState(() =>
     [...conditions]
       .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -60,9 +61,7 @@ export function CampaignManagementPanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-semibold text-zinc-900">Gerenciar campanha</h2>
-          <p className="mt-1 text-sm text-zinc-600">
-            Edite os dados principais da campanha e seus compromissos.
-          </p>
+          <p className="mt-1 text-sm text-zinc-600">Edite os dados principais da campanha.</p>
         </div>
         <button
           type="button"
@@ -137,24 +136,36 @@ export function CampaignManagementPanel({
           <input type="hidden" name="priestName" value="" />
         )}
 
-        <input
-          type="number"
-          name="durationDays"
-          min={1}
-          max={730}
-          defaultValue={campaign.durationDays}
-          required
-          title="Duração em dias"
-          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-emerald-500 focus:ring-2"
-        />
+        {isConfession ? (
+          <input
+            type="number"
+            name="durationDays"
+            value={1}
+            readOnly
+            title="Duração fixa para campanha de confissão"
+            aria-label="Duração fixa para campanha de confissão"
+            className="w-full rounded-lg border border-zinc-300 bg-zinc-100 px-3 py-2 text-sm text-zinc-600"
+          />
+        ) : (
+          <input
+            type="number"
+            name="durationDays"
+            min={1}
+            max={730}
+            defaultValue={campaign.durationDays}
+            required
+            title="Duração em dias"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-emerald-500 focus:ring-2"
+          />
+        )}
 
         <input
           type="date"
           name="startDate"
           defaultValue={startDate}
           required
-          title="Data de início da campanha"
-          aria-label="Data de início da campanha"
+          title={isConfession ? "Data da confissão" : "Data de início da campanha"}
+          aria-label={isConfession ? "Data da confissão" : "Data de início da campanha"}
           className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-emerald-500 focus:ring-2"
         />
 
@@ -168,6 +179,7 @@ export function CampaignManagementPanel({
           className="w-full sm:col-span-2 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-emerald-500 focus:ring-2"
         />
 
+        {isConfession ? null : (
         <div className="sm:col-span-2 rounded-lg border border-zinc-200 bg-white p-3">
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">
@@ -258,6 +270,7 @@ export function CampaignManagementPanel({
             </div>
           )}
         </div>
+        )}
 
         <div className="sm:col-span-2 flex justify-end">
           <InteractiveSubmitButton

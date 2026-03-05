@@ -42,8 +42,8 @@ export default async function MinhaDevocaoPage() {
           <SparkIcon className="size-8" /> Minha Devoção
         </h1>
         <p className="text-zinc-600">
-          Organize campanhas de penitência, jejum, oração e abstinência, com progresso diário,
-          check-in e lembretes personalizados.
+          Organize campanhas de penitência, jejum, oração, abstinência e confissão, com lembretes,
+          versículo diário e acompanhamento espiritual.
         </p>
       </header>
 
@@ -95,11 +95,19 @@ export default async function MinhaDevocaoPage() {
                     ) : null}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
-                      <span className="inline-flex items-center gap-1 rounded-full border border-zinc-300 bg-white px-2 py-0.5">
-                        <CheckCircleIcon className="size-3.5 text-emerald-700" /> {campaign.checkedInDays}/{campaign.durationDays}
-                      </span>
+                      {campaign.type === "confissao" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-zinc-300 bg-white px-2 py-0.5">
+                          <CheckCircleIcon className="size-3.5 text-emerald-700" />
+                          {campaign.confessionItemsConfessed}/{campaign.confessionItemsTotal} confessados
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-zinc-300 bg-white px-2 py-0.5">
+                          <CheckCircleIcon className="size-3.5 text-emerald-700" /> {campaign.checkedInDays}/
+                          {campaign.durationDays}
+                        </span>
+                      )}
 
-                      {campaign.conditionCount > 0 ? (
+                      {campaign.type !== "confissao" && campaign.conditionCount > 0 ? (
                         <span className="rounded-full border border-zinc-300 bg-white px-2 py-0.5">
                           {campaign.conditionCount} condição(ões)
                         </span>

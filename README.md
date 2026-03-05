@@ -44,6 +44,39 @@ O app suporta instalação como PWA com foco em experiência **standalone mobile
 - Quando uma nova versão do service worker é detectada, o app exibe um aviso de atualização.
 - Toque em **Atualizar** para ativar a versão mais recente sem limpar dados do usuário.
 
+### Notas de versão (changelog em pop-up)
+
+- Após tocar em **Atualizar** e recarregar com a nova versão, o app exibe um pop-up com as notas da versão.
+- O pop-up é exibido apenas **uma vez por versão** para cada instalação/navegador.
+
+Fonte de verdade do changelog:
+
+- Arquivo: `data/releases/releases.json`
+- Endpoints:
+  - `GET /api/version/current` (versão mais recente + resumo)
+  - `GET /api/version/changelog?version=x.y.z` (notas completas da versão)
+
+Categorias aceitas em `changes[].category`:
+
+- `feature`
+- `fix`
+- `improvement`
+- `security`
+- `breaking`
+
+### Checklist de release (PWA + changelog)
+
+Antes de publicar uma nova versão:
+
+1. Atualize `data/releases/releases.json` com a nova entrada de release.
+2. Ajuste `latest` para a nova versão (SemVer, ex.: `0.2.0`).
+3. Faça bump de cache no `public/sw.js` (`SHELL_CACHE` e `RUNTIME_CACHE`) para invalidar o shell antigo.
+4. Faça deploy.
+5. Smoke test no app instalado:
+   - aparece aviso de nova versão;
+   - botão **Atualizar** ativa a nova versão;
+   - pop-up de notas da versão abre após recarregar.
+
 ## Banco de dados (Neon + Drizzle)
 
 1. Configure `DATABASE_URL` no arquivo `.env`.
