@@ -142,7 +142,7 @@ export function RecordacaoForm({ mode, submitAction, memory }: RecordacaoFormPro
           pendingClassName="bg-emerald-500"
         />
         <Link
-          href="/diario/recordacoes"
+          href="/diario#recordacoes"
           className="inline-flex rounded-xl border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-100"
         >
           Cancelar

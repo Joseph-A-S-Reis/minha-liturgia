@@ -251,7 +251,6 @@ export async function createJournalMemoryAction(formData: FormData): Promise<voi
     }
 
     revalidatePath("/diario");
-    revalidatePath("/diario/recordacoes");
 
   } catch (error) {
     throw new Error(normalizeError(error));
@@ -379,7 +378,6 @@ export async function updateJournalMemoryAction(formData: FormData): Promise<voi
     }
 
     revalidatePath("/diario");
-    revalidatePath("/diario/recordacoes");
     revalidatePath(`/diario/recordacoes/${parsed.memoryId}/editar`);
 
   } catch (error) {
@@ -399,7 +397,6 @@ export async function deleteJournalMemoryAction(formData: FormData): Promise<voi
       .where(and(eq(journalMemories.id, parsed.memoryId), eq(journalMemories.userId, userId)));
 
     revalidatePath("/diario");
-    revalidatePath("/diario/recordacoes");
 
   } catch (error) {
     throw new Error(normalizeError(error));
@@ -439,7 +436,6 @@ export async function deleteJournalMemoryAttachmentAction(formData: FormData): P
       .set({ updatedAt: new Date() })
       .where(and(eq(journalMemories.id, parsed.memoryId), eq(journalMemories.userId, userId)));
 
-    revalidatePath("/diario/recordacoes");
     revalidatePath(`/diario/recordacoes/${parsed.memoryId}`);
     revalidatePath(`/diario/recordacoes/${parsed.memoryId}/editar`);
   } catch (error) {

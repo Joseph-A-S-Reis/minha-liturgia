@@ -22,7 +22,7 @@ async function createAndRedirectAction(
     };
   }
 
-  redirect("/diario/recordacoes");
+  redirect("/diario#recordacoes");
 }
 
 export default async function NovaRecordacaoPage() {
@@ -39,7 +39,7 @@ export default async function NovaRecordacaoPage() {
           <Link href="/diario" className="hover:underline">
             Diário
           </Link>{" "}
-          / <Link href="/diario/recordacoes" className="hover:underline">Recordações</Link> / Nova
+          / <Link href="/diario#recordacoes" className="hover:underline">Recordações</Link> / Nova
         </p>
         <h1 className="text-3xl font-bold text-zinc-900 sm:text-4xl">Nova recordação</h1>
         <p className="text-sm text-zinc-600">

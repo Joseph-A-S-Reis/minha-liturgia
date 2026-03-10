@@ -211,6 +211,27 @@ export function getUpcomingCatholicEvents(days = 5): CatholicEvent[] {
   return events;
 }
 
+export function getUpcomingConfirmedCatholicEvents(limit = 5, date = new Date()): CatholicEvent[] {
+  const safeLimit = Math.max(1, limit);
+  const todayIso = getLocalIsoDate(date);
+  const upcoming: CatholicEvent[] = [];
+
+  for (let yearOffset = 0; yearOffset < 3 && upcoming.length < safeLimit; yearOffset += 1) {
+    const year = date.getFullYear() + yearOffset;
+    const events = getYearCatholicEvents(year).filter((event) => event.date >= todayIso);
+
+    for (const event of events) {
+      upcoming.push(event);
+
+      if (upcoming.length >= safeLimit) {
+        break;
+      }
+    }
+  }
+
+  return upcoming.slice(0, safeLimit);
+}
+
 
 export function formatDatePtBr(isoDate: string): string {
   const [year, month, day] = isoDate.split("-").map(Number);

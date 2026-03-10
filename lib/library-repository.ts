@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   libraryAssets,
@@ -53,6 +53,15 @@ type ListResourcesInput = {
   section?: string;
   officialOnly?: boolean;
   limit?: number;
+  page?: number;
+};
+
+export type PaginatedLibraryResources = {
+  items: LibraryResourceCard[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 };
 
 export type LibraryContextSnippet = {
@@ -100,11 +109,40 @@ export async function getLibraryCategories(section?: string): Promise<LibraryCat
 
 export async function listPublishedLibraryResources(
   input: ListResourcesInput,
-): Promise<LibraryResourceCard[]> {
+): Promise<PaginatedLibraryResources> {
   const query = input.query?.trim();
   const limit = Math.min(Math.max(input.limit ?? 60, 1), 120);
+  const requestedPage = Math.max(1, Math.trunc(input.page ?? 1));
+  const filteredBySection = input.section?.trim();
 
   const whereClauses = [eq(libraryResources.status, "published")];
+
+  if (filteredBySection) {
+    const sectionMatches = await db
+      .select({ resourceId: libraryResourceCategories.resourceId })
+      .from(libraryResourceCategories)
+      .innerJoin(libraryCategories, eq(libraryCategories.id, libraryResourceCategories.categoryId))
+      .where(
+        and(
+          eq(libraryCategories.isActive, true),
+          eq(libraryCategories.section, filteredBySection),
+        ),
+      );
+
+    const sectionResourceIds = Array.from(new Set(sectionMatches.map((item) => item.resourceId)));
+
+    if (sectionResourceIds.length === 0) {
+      return {
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: limit,
+        totalPages: 0,
+      };
+    }
+
+    whereClauses.push(inArray(libraryResources.id, sectionResourceIds));
+  }
 
   if (input.type) {
     whereClauses.push(eq(libraryResources.resourceType, input.type));
@@ -123,6 +161,27 @@ export async function listPublishedLibraryResources(
       )!,
     );
   }
+
+  const [countResult] = await db
+    .select({ total: sql<number>`count(*)` })
+    .from(libraryResources)
+    .where(and(...whereClauses));
+
+  const total = Number(countResult?.total ?? 0);
+
+  if (total === 0) {
+    return {
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: limit,
+      totalPages: 0,
+    };
+  }
+
+  const totalPages = Math.ceil(total / limit);
+  const page = Math.min(requestedPage, totalPages);
+  const offset = (page - 1) * limit;
 
   const resources = await db
     .select({
@@ -144,10 +203,17 @@ export async function listPublishedLibraryResources(
     .leftJoin(users, eq(users.id, libraryResources.createdByUserId))
     .where(and(...whereClauses))
     .orderBy(desc(libraryResources.publishedAt), desc(libraryResources.createdAt))
+    .offset(offset)
     .limit(limit);
 
   if (resources.length === 0) {
-    return [];
+    return {
+      items: [],
+      total,
+      page,
+      pageSize: limit,
+      totalPages,
+    };
   }
 
   const resourceIds = resources.map((item) => item.id);
@@ -177,19 +243,19 @@ export async function listPublishedLibraryResources(
     categoryMap.set(row.resourceId, previous);
   }
 
-  const filteredBySection = input.section?.trim();
-
-  const normalized = resources
+  const items = resources
     .map<LibraryResourceCard>((resource) => ({
       ...resource,
       categories: categoryMap.get(resource.id) ?? [],
-    }))
-    .filter((resource) => {
-      if (!filteredBySection) return true;
-      return resource.categories.some((category) => category.section === filteredBySection);
-    });
+    }));
 
-  return normalized;
+  return {
+    items,
+    total,
+    page,
+    pageSize: limit,
+    totalPages,
+  };
 }
 
 export async function getPublishedLibraryResourceBySlug(

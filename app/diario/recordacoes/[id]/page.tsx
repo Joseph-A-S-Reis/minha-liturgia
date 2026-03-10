@@ -35,7 +35,7 @@ export default async function RecordacaoDetalhePage({ params }: PageProps) {
     "use server";
 
     await deleteJournalMemoryAction(formData);
-    redirect("/diario/recordacoes");
+    redirect("/diario#recordacoes");
   }
 
   return (
@@ -45,7 +45,7 @@ export default async function RecordacaoDetalhePage({ params }: PageProps) {
           <Link href="/diario" className="hover:underline">
             Diário
           </Link>{" "}
-          / <Link href="/diario/recordacoes" className="hover:underline">Recordações</Link> / {memory.title}
+          / <Link href="/diario#recordacoes" className="hover:underline">Recordações</Link> / {memory.title}
         </p>
         <h1 className="text-3xl font-bold text-zinc-900 sm:text-4xl">{memory.title}</h1>
         <p className="text-sm text-zinc-600">Data da recordação: {formatDate(memory.memoryDate)}</p>
@@ -76,7 +76,7 @@ export default async function RecordacaoDetalhePage({ params }: PageProps) {
 
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-zinc-200 pt-4">
           <Link
-            href="/diario/recordacoes"
+            href="/diario#recordacoes"
             className="inline-flex rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
           >
             Voltar às Recordações
@@ -102,7 +102,7 @@ export default async function RecordacaoDetalhePage({ params }: PageProps) {
 
       <section>
         <Link
-          href="/diario/recordacoes"
+          href="/diario#recordacoes"
           className="inline-flex items-center text-sm font-medium text-zinc-600 hover:text-zinc-800"
         >
           Voltar para Minhas recordações

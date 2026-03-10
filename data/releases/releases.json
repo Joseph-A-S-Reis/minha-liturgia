@@ -1,6 +1,63 @@
 {
-  "latest": "0.11.0",
+  "latest": "0.12.0",
   "releases": [
+    {
+      "version": "0.12.0",
+      "releasedAt": "2026-03-10",
+      "title": "Versão 12 — Diário unificado, calendário pessoal e biblioteca paginada",
+      "highlights": [
+        "Recordações agora fazem parte da página principal do Diário, com navegação ancorada e painel unificado.",
+        "Painel lateral passa a combinar próximos dias litúrgicos com eventos pessoais confirmados do usuário.",
+        "Biblioteca ganha paginação server-side com contagem real de publicações e navegação por páginas."
+      ],
+      "changes": [
+        {
+          "category": "feature",
+          "title": "Recordações integradas à página principal do Diário",
+          "description": "A seção de recordações deixou de viver em uma tela isolada e passou a compartilhar o fluxo principal do Diário, com listagem, criação e gerenciamento no mesmo contexto da jornada pessoal."
+        },
+        {
+          "category": "improvement",
+          "title": "Navegação ancorada para a área de Recordações",
+          "description": "Links, cancelamentos, exclusões e redirecionamentos de recordações agora retornam diretamente para /diario#recordacoes, reduzindo cliques extras e mantendo o usuário no ponto certo da interface."
+        },
+        {
+          "category": "improvement",
+          "title": "Painel reutilizável para listagem de recordações",
+          "description": "A experiência de Recordações foi consolidada em um componente compartilhado, simplificando manutenção, padronizando ações e removendo duplicação da antiga página dedicada."
+        },
+        {
+          "category": "feature",
+          "title": "Próximos dias com eventos litúrgicos e pessoais",
+          "description": "O painel lateral agora cruza o calendário litúrgico com os eventos do usuário autenticado, exibindo lembretes pessoais por dia ao lado da celebração correspondente."
+        },
+        {
+          "category": "feature",
+          "title": "Lista de próximos eventos confirmados da Igreja",
+          "description": "Além da visão diária, o app passou a mostrar uma lista dedicada com os próximos eventos litúrgicos confirmados e um atalho direto para abrir o calendário completo."
+        },
+        {
+          "category": "improvement",
+          "title": "Expansão de recorrência no resumo do calendário",
+          "description": "Foi adicionada uma camada própria para expandir ocorrências recorrentes dos eventos do usuário dentro da janela exibida no painel, respeitando intervalo, término e ordenação por data."
+        },
+        {
+          "category": "feature",
+          "title": "Paginação server-side na Biblioteca",
+          "description": "A Biblioteca agora aceita paginação por querystring, busca apenas a página necessária no servidor e oferece navegação entre páginas sem carregar lotes extensos de conteúdo de uma só vez."
+        },
+        {
+          "category": "fix",
+          "title": "Contagem real de publicações na Biblioteca",
+          "description": "O total exibido na busca da Biblioteca passou a refletir a quantidade completa de resultados encontrados, em vez de usar apenas o número de itens carregados na página atual."
+        },
+        {
+          "category": "improvement",
+          "title": "Resumo de faixa exibida e páginas da Biblioteca",
+          "description": "A interface da Biblioteca agora informa intervalo exibido, página atual, total de páginas e controles Anterior/Próxima, deixando a navegação muito mais clara para o usuário."
+        }
+      ]
+    },
     {
       "version": "0.11.0",
       "releasedAt": "2026-03-05",

@@ -39,7 +39,7 @@ export default async function EditarRecordacaoPage({ params }: PageProps) {
       };
     }
 
-    redirect("/diario/recordacoes");
+    redirect("/diario#recordacoes");
   }
 
   return (
@@ -49,7 +49,7 @@ export default async function EditarRecordacaoPage({ params }: PageProps) {
           <Link href="/diario" className="hover:underline">
             Diário
           </Link>{" "}
-          / <Link href="/diario/recordacoes" className="hover:underline">Recordações</Link> / Editar
+          / <Link href="/diario#recordacoes" className="hover:underline">Recordações</Link> / Editar
         </p>
         <h1 className="text-3xl font-bold text-zinc-900 sm:text-4xl">Editar recordação</h1>
         <p className="text-sm text-zinc-600">Atualize informações e anexos desta recordação.</p>

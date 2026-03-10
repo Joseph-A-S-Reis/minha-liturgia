@@ -12,8 +12,11 @@ type PageProps = {
     q?: string;
     tipo?: string;
     aba?: string;
+    pagina?: string;
   }>;
 };
+
+const PUBLICATIONS_PER_PAGE = 20;
 
 const RESOURCE_TYPES = [
   { value: "all", label: "Todos" },
@@ -37,21 +40,33 @@ function formatArticleDate(value: Date | null) {
   }).format(value);
 }
 
+function parsePositivePage(value: string | undefined) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return 1;
+  }
+
+  return Math.max(1, Math.trunc(parsed));
+}
+
 export default async function BibliotecaPage({ searchParams }: PageProps) {
   const session = await auth();
   const publishAccess = session?.user?.id
     ? await getLibraryPublishAccess(session.user.id)
     : { canPublish: false, isAdmin: false, isCurator: false };
-  const { q, tipo, aba } = await searchParams;
+  const { q, tipo, aba, pagina } = await searchParams;
 
   const query = q?.trim() ?? "";
   const selectedType: ResourceTypeFilter = isResourceTypeFilter(tipo) ? tipo : "all";
   const tab = aba === "santa-igreja" ? "santa-igreja" : "geral";
+  const requestedPage = parsePositivePage(pagina);
 
   const buildLibraryHref = (input: {
     tab: "geral" | "santa-igreja";
     type: ResourceTypeFilter;
     query: string;
+    page?: number;
   }) => {
     const params = new URLSearchParams();
 
@@ -67,12 +82,22 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
       params.set("q", input.query.trim());
     }
 
+    if ((input.page ?? 1) > 1) {
+      params.set("pagina", String(input.page));
+    }
+
     const queryString = params.toString();
     return queryString ? `/biblioteca?${queryString}` : "/biblioteca";
   };
 
   let categories: Awaited<ReturnType<typeof getLibraryCategories>> = [];
-  let resources: Awaited<ReturnType<typeof listPublishedLibraryResources>> = [];
+  let resources: Awaited<ReturnType<typeof listPublishedLibraryResources>> = {
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: PUBLICATIONS_PER_PAGE,
+    totalPages: 0,
+  };
   let databaseSetupError: string | null = null;
 
   try {
@@ -83,7 +108,8 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
         type: selectedType !== "all" ? selectedType : undefined,
         section: undefined,
         officialOnly: tab === "santa-igreja",
-        limit: 80,
+        limit: PUBLICATIONS_PER_PAGE,
+        page: requestedPage,
       }),
     ]);
   } catch (error) {
@@ -99,6 +125,20 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
       throw error;
     }
   }
+
+  const pageStart = resources.total === 0 ? 0 : (resources.page - 1) * resources.pageSize + 1;
+  const pageEnd = resources.total === 0 ? 0 : pageStart + resources.items.length - 1;
+  const pageNumbers = Array.from(
+    new Set(
+      [
+        1,
+        resources.page - 1,
+        resources.page,
+        resources.page + 1,
+        resources.totalPages,
+      ].filter((pageNumber) => pageNumber >= 1 && pageNumber <= resources.totalPages),
+    ),
+  ).sort((left, right) => left - right);
 
   return (
     <main className="flex min-h-screen w-full flex-col gap-6 px-6 py-10 sm:px-10">
@@ -199,7 +239,7 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
 
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-lg font-semibold text-zinc-900">
-            {resources.length} publicação(ões) encontrada(s)
+            {resources.total} publicação(ões) encontrada(s)
           </h2>
           {tab === "santa-igreja" ? (
             <span className="rounded-full border border-emerald-300 bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
@@ -214,13 +254,20 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
           </p>
         ) : null}
 
-        {resources.length === 0 ? (
+        {resources.total > 0 ? (
+          <p className="mt-2 text-xs text-zinc-500">
+            Exibindo {pageStart}–{pageEnd} de {resources.total} conteúdo(s) · Página {resources.page}
+            {resources.totalPages > 0 ? ` de ${resources.totalPages}` : ""}
+          </p>
+        ) : null}
+
+        {resources.items.length === 0 ? (
           <p className="mt-4 text-sm text-zinc-600">
             Nenhum conteúdo encontrado com os filtros atuais.
           </p>
         ) : (
           <ul className="mt-4 grid gap-3">
-            {resources.map((resource) => (
+            {resources.items.map((resource) => (
               <li key={resource.id} className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-800">
@@ -266,6 +313,73 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
             ))}
           </ul>
         )}
+
+        {resources.totalPages > 1 ? (
+          <nav
+            className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-4"
+            aria-label="Paginação da biblioteca"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={buildLibraryHref({
+                  tab,
+                  type: selectedType,
+                  query,
+                  page: Math.max(1, resources.page - 1),
+                })}
+                aria-disabled={resources.page <= 1}
+                className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                  resources.page <= 1
+                    ? "pointer-events-none border-zinc-200 bg-zinc-100 text-zinc-400"
+                    : "border-sky-300 bg-white text-sky-700 hover:bg-sky-50"
+                }`}
+              >
+                Anterior
+              </Link>
+
+              {pageNumbers.map((pageNumber, index) => {
+                const previousPage = pageNumbers[index - 1];
+                const showGap = previousPage !== undefined && pageNumber - previousPage > 1;
+
+                return (
+                  <span key={pageNumber} className="flex items-center gap-2">
+                    {showGap ? <span className="text-sm text-zinc-400">…</span> : null}
+                    <Link
+                      href={buildLibraryHref({ tab, type: selectedType, query, page: pageNumber })}
+                      aria-current={pageNumber === resources.page ? "page" : undefined}
+                      className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                        pageNumber === resources.page
+                          ? "border-sky-700 bg-sky-700 text-white"
+                          : "border-zinc-300 bg-white text-zinc-700 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+                      }`}
+                    >
+                      {pageNumber}
+                    </Link>
+                  </span>
+                );
+              })}
+
+              <Link
+                href={buildLibraryHref({
+                  tab,
+                  type: selectedType,
+                  query,
+                  page: Math.min(resources.totalPages, resources.page + 1),
+                })}
+                aria-disabled={resources.page >= resources.totalPages}
+                className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                  resources.page >= resources.totalPages
+                    ? "pointer-events-none border-zinc-200 bg-zinc-100 text-zinc-400"
+                    : "border-sky-300 bg-white text-sky-700 hover:bg-sky-50"
+                }`}
+              >
+                Próxima
+              </Link>
+            </div>
+
+            <p className="text-xs text-zinc-500">20 publicações por página</p>
+          </nav>
+        ) : null}
       </section>
     </main>
   );

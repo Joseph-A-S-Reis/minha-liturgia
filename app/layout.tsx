@@ -76,7 +76,7 @@ export default async function RootLayout({
         <MobileTabbar />
 
         {/* Right Panel - Calendar (Fixed Right) */}
-        <EventsPanel />
+        <EventsPanel userId={session?.user?.id ?? null} />
       </body>
     </html>
   );
