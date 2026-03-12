@@ -9,6 +9,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import StarterKit from "@tiptap/starter-kit";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { createAndPublishLibraryResourceAction } from "@/app/biblioteca/actions";
+import { buildLocalHtmlPreviewDocument } from "@/app/biblioteca/article-preview";
 
 type ResourceType = "article" | "book" | "document";
 type AssetKind = "pdf" | "docx" | "epub";
@@ -76,38 +77,6 @@ const TYPE_CONFIG: Record<
     usesHtmlEditor: false,
   },
 };
-
-function sanitizeLocalHtmlPreview(rawHtml: string) {
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(rawHtml, "text/html");
-
-    doc
-      .querySelectorAll(
-        "script,style,noscript,object,embed,link,meta,base,head,form,input,button,textarea,select,nav,menu,aside,header,footer,area",
-      )
-      .forEach((element) => element.remove());
-
-    doc.querySelectorAll("*").forEach((element) => {
-      for (const attr of Array.from(element.attributes)) {
-        const key = attr.name.toLowerCase();
-
-        if (
-          key === "style" ||
-          key === "class" ||
-          key === "id" ||
-          key.startsWith("on")
-        ) {
-          element.removeAttribute(attr.name);
-        }
-      }
-    });
-
-    return (doc.body?.innerHTML ?? rawHtml).trim();
-  } catch {
-    return rawHtml;
-  }
-}
 
 export function NewResourceForm({ categories }: Props) {
   const router = useRouter();
@@ -750,7 +719,7 @@ export function NewResourceForm({ categories }: Props) {
           <div className="mt-3 w-full overflow-hidden rounded-lg border border-zinc-200 bg-white">
             <iframe
               title="Pré-visualização do artigo"
-              srcDoc={sanitizeLocalHtmlPreview(articleHtml)}
+              srcDoc={buildLocalHtmlPreviewDocument(articleHtml)}
               className="h-[70vh] w-full"
               sandbox="allow-same-origin"
             />

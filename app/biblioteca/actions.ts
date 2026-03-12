@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, isNotNull, ne, or } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { load } from "cheerio";
@@ -8,12 +8,19 @@ import { auth } from "@/auth";
 import { db } from "@/db/client";
 import {
   libraryAssets,
+  libraryResourceBookmarks,
   libraryResourceCategories,
+  libraryResourceComments,
+  libraryResourceLikes,
   libraryResources,
 } from "@/db/schema";
 import { acquireIdempotencyLock, createIdempotencyKey } from "@/lib/idempotency";
 import {
+  assertCanDeleteOwnLibraryComment,
+  assertCanEditOwnLibraryComment,
+  assertCanInteractWithLibraryResource,
   assertCanManageLibraryResource,
+  getLibraryPublishAccess,
   requireLibraryPublishAccess,
 } from "@/lib/library-access";
 import {
@@ -408,6 +415,89 @@ const deleteResourceSchema = z.object({
   resourceId: z.string().trim().min(1),
   idempotencyKey: z.string().trim().min(8).max(128).optional(),
 });
+
+const resourceInteractionSchema = z.object({
+  resourceId: z.string().trim().min(1),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+const createCommentSchema = z.object({
+  resourceId: z.string().trim().min(1),
+  content: z.string().trim().min(3).max(4000),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+const updateCommentSchema = z.object({
+  commentId: z.string().trim().min(1),
+  content: z.string().trim().min(3).max(4000),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+const deleteCommentSchema = z.object({
+  commentId: z.string().trim().min(1),
+  idempotencyKey: z.string().trim().min(8).max(128).optional(),
+});
+
+function normalizeCommentContent(value: string) {
+  return value
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+async function getInteractionTargetResource(resourceId: string) {
+  const [resource] = await db
+    .select({
+      id: libraryResources.id,
+      slug: libraryResources.slug,
+      status: libraryResources.status,
+      createdByUserId: libraryResources.createdByUserId,
+    })
+    .from(libraryResources)
+    .where(eq(libraryResources.id, resourceId))
+    .limit(1);
+
+  if (!resource || resource.status !== "published") {
+    throw new Error("Conteúdo publicado não encontrado para esta interação.");
+  }
+
+  return resource;
+}
+
+function revalidateLibraryInteractionPaths(slug: string) {
+  revalidatePath("/biblioteca");
+  revalidatePath(`/biblioteca/${slug}`);
+}
+
+async function syncLibraryInteractionCounters(resourceId: string) {
+  const [[likesCountResult], [commentsCountResult]] = await Promise.all([
+    db
+      .select({ total: sql<number>`count(*)` })
+      .from(libraryResourceLikes)
+      .where(eq(libraryResourceLikes.resourceId, resourceId)),
+    db
+      .select({ total: sql<number>`count(*)` })
+      .from(libraryResourceComments)
+      .where(eq(libraryResourceComments.resourceId, resourceId)),
+  ]);
+
+  const nextTotalLikes = Number(likesCountResult?.total ?? 0);
+  const nextTotalComments = Number(commentsCountResult?.total ?? 0);
+
+  await db
+    .update(libraryResources)
+    .set({
+      totalLikes: nextTotalLikes,
+      totalComments: nextTotalComments,
+      updatedAt: new Date(),
+    })
+    .where(eq(libraryResources.id, resourceId));
+
+  return {
+    totalLikes: nextTotalLikes,
+    totalComments: nextTotalComments,
+  };
+}
 
 export async function createLibraryResourceDraftAction(input: unknown) {
   const userId = await requireUserId();
@@ -931,4 +1021,287 @@ export async function deleteLibraryResourceAction(input: unknown) {
   revalidatePath(`/biblioteca/${resource.slug}`);
 
   return { ok: true as const };
+}
+
+export async function toggleLibraryBookmarkAction(input: unknown) {
+  const userId = await requireUserId();
+  const access = await getLibraryPublishAccess(userId);
+  const parsed = resourceInteractionSchema.parse(input);
+  const resource = await getInteractionTargetResource(parsed.resourceId);
+
+  assertCanInteractWithLibraryResource({
+    userId,
+    createdByUserId: resource.createdByUserId,
+    access,
+  });
+
+  const actionKey = createIdempotencyKey("library:bookmark:toggle", {
+    resourceId: parsed.resourceId,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "library:bookmark:toggle",
+    actionKey,
+    ttlSeconds: 60,
+  });
+
+  if (!canProcess) {
+    return { ok: true as const, deduped: true as const };
+  }
+
+  const [existing] = await db
+    .select({ id: libraryResourceBookmarks.id })
+    .from(libraryResourceBookmarks)
+    .where(
+      and(
+        eq(libraryResourceBookmarks.userId, userId),
+        eq(libraryResourceBookmarks.resourceId, parsed.resourceId),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    await db.delete(libraryResourceBookmarks).where(eq(libraryResourceBookmarks.id, existing.id));
+  } else {
+    await db.insert(libraryResourceBookmarks).values({
+      id: crypto.randomUUID(),
+      userId,
+      resourceId: parsed.resourceId,
+    });
+  }
+
+  revalidateLibraryInteractionPaths(resource.slug);
+
+  return {
+    ok: true as const,
+    bookmarked: !existing,
+  };
+}
+
+export async function toggleLibraryLikeAction(input: unknown) {
+  const userId = await requireUserId();
+  const access = await getLibraryPublishAccess(userId);
+  const parsed = resourceInteractionSchema.parse(input);
+  const resource = await getInteractionTargetResource(parsed.resourceId);
+
+  assertCanInteractWithLibraryResource({
+    userId,
+    createdByUserId: resource.createdByUserId,
+    access,
+  });
+
+  const actionKey = createIdempotencyKey("library:like:toggle", {
+    resourceId: parsed.resourceId,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "library:like:toggle",
+    actionKey,
+    ttlSeconds: 60,
+  });
+
+  if (!canProcess) {
+    return { ok: true as const, deduped: true as const };
+  }
+
+  const [existing] = await db
+    .select({ id: libraryResourceLikes.id })
+    .from(libraryResourceLikes)
+    .where(
+      and(
+        eq(libraryResourceLikes.userId, userId),
+        eq(libraryResourceLikes.resourceId, parsed.resourceId),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    await db.delete(libraryResourceLikes).where(eq(libraryResourceLikes.id, existing.id));
+  } else {
+    await db.insert(libraryResourceLikes).values({
+      id: crypto.randomUUID(),
+      userId,
+      resourceId: parsed.resourceId,
+    });
+  }
+
+  const counters = await syncLibraryInteractionCounters(parsed.resourceId);
+
+  revalidateLibraryInteractionPaths(resource.slug);
+
+  return {
+    ok: true as const,
+    liked: !existing,
+    totalLikes: counters.totalLikes,
+    totalComments: counters.totalComments,
+  };
+}
+
+export async function createLibraryCommentAction(input: unknown) {
+  const userId = await requireUserId();
+  const access = await getLibraryPublishAccess(userId);
+  const parsed = createCommentSchema.parse(input);
+  const resource = await getInteractionTargetResource(parsed.resourceId);
+
+  assertCanInteractWithLibraryResource({
+    userId,
+    createdByUserId: resource.createdByUserId,
+    access,
+  });
+
+  const normalizedContent = normalizeCommentContent(parsed.content);
+  const actionKey = createIdempotencyKey("library:comment:create", {
+    resourceId: parsed.resourceId,
+    content: normalizedContent,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "library:comment:create",
+    actionKey,
+    ttlSeconds: 60,
+  });
+
+  if (!canProcess) {
+    return { ok: true as const, deduped: true as const };
+  }
+
+  const commentId = crypto.randomUUID();
+
+  await db.insert(libraryResourceComments).values({
+    id: commentId,
+    resourceId: parsed.resourceId,
+    userId,
+    content: normalizedContent,
+  });
+
+  const counters = await syncLibraryInteractionCounters(parsed.resourceId);
+
+  revalidateLibraryInteractionPaths(resource.slug);
+
+  return {
+    ok: true as const,
+    id: commentId,
+    totalComments: counters.totalComments,
+    totalLikes: counters.totalLikes,
+  };
+}
+
+export async function updateLibraryCommentAction(input: unknown) {
+  const userId = await requireUserId();
+  const access = await getLibraryPublishAccess(userId);
+  const parsed = updateCommentSchema.parse(input);
+  const normalizedContent = normalizeCommentContent(parsed.content);
+
+  const [comment] = await db
+    .select({
+      id: libraryResourceComments.id,
+      userId: libraryResourceComments.userId,
+      resourceId: libraryResourceComments.resourceId,
+      resourceSlug: libraryResources.slug,
+    })
+    .from(libraryResourceComments)
+    .innerJoin(libraryResources, eq(libraryResources.id, libraryResourceComments.resourceId))
+    .where(eq(libraryResourceComments.id, parsed.commentId))
+    .limit(1);
+
+  if (!comment) {
+    throw new Error("Comentário não encontrado.");
+  }
+
+  assertCanEditOwnLibraryComment({
+    userId,
+    commentUserId: comment.userId,
+    access,
+  });
+
+  const actionKey = createIdempotencyKey("library:comment:update", {
+    commentId: parsed.commentId,
+    content: normalizedContent,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "library:comment:update",
+    actionKey,
+    ttlSeconds: 60,
+  });
+
+  if (!canProcess) {
+    return { ok: true as const, deduped: true as const };
+  }
+
+  await db
+    .update(libraryResourceComments)
+    .set({
+      content: normalizedContent,
+      updatedAt: new Date(),
+    })
+    .where(eq(libraryResourceComments.id, parsed.commentId));
+
+  revalidateLibraryInteractionPaths(comment.resourceSlug);
+
+  return { ok: true as const };
+}
+
+export async function deleteLibraryCommentAction(input: unknown) {
+  const userId = await requireUserId();
+  const access = await getLibraryPublishAccess(userId);
+  const parsed = deleteCommentSchema.parse(input);
+
+  const [comment] = await db
+    .select({
+      id: libraryResourceComments.id,
+      userId: libraryResourceComments.userId,
+      resourceId: libraryResourceComments.resourceId,
+      resourceSlug: libraryResources.slug,
+    })
+    .from(libraryResourceComments)
+    .innerJoin(libraryResources, eq(libraryResources.id, libraryResourceComments.resourceId))
+    .where(eq(libraryResourceComments.id, parsed.commentId))
+    .limit(1);
+
+  if (!comment) {
+    throw new Error("Comentário não encontrado.");
+  }
+
+  assertCanDeleteOwnLibraryComment({
+    userId,
+    commentUserId: comment.userId,
+    access,
+  });
+
+  const actionKey = createIdempotencyKey("library:comment:delete", {
+    commentId: parsed.commentId,
+    request: parsed.idempotencyKey ?? null,
+  });
+
+  const canProcess = await acquireIdempotencyLock({
+    userId,
+    actionType: "library:comment:delete",
+    actionKey,
+    ttlSeconds: 60,
+  });
+
+  if (!canProcess) {
+    return { ok: true as const, deduped: true as const };
+  }
+
+  await db.delete(libraryResourceComments).where(eq(libraryResourceComments.id, parsed.commentId));
+
+  const counters = await syncLibraryInteractionCounters(comment.resourceId);
+
+  revalidateLibraryInteractionPaths(comment.resourceSlug);
+
+  return {
+    ok: true as const,
+    totalComments: counters.totalComments,
+    totalLikes: counters.totalLikes,
+  };
 }

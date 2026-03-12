@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { auth } from "@/auth";
-import { LibraryIcon, SparkIcon } from "@/app/components/icons";
+import { HeartIcon, LibraryIcon, MessageSquareIcon, SparkIcon } from "@/app/components/icons";
 import {
   getLibraryCategories,
   listPublishedLibraryResources,
@@ -13,6 +13,7 @@ type PageProps = {
     tipo?: string;
     aba?: string;
     pagina?: string;
+    interacao?: string;
   }>;
 };
 
@@ -26,9 +27,14 @@ const RESOURCE_TYPES = [
 ] as const;
 
 type ResourceTypeFilter = (typeof RESOURCE_TYPES)[number]["value"];
+type InteractionFilter = "all" | "bookmarks" | "likes";
 
 function isResourceTypeFilter(value: string | undefined): value is ResourceTypeFilter {
   return RESOURCE_TYPES.some((item) => item.value === value);
+}
+
+function isInteractionFilter(value: string | undefined): value is InteractionFilter {
+  return value === "all" || value === "bookmarks" || value === "likes";
 }
 
 function formatArticleDate(value: Date | null) {
@@ -37,6 +43,7 @@ function formatArticleDate(value: Date | null) {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
   }).format(value);
 }
 
@@ -55,16 +62,21 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
   const publishAccess = session?.user?.id
     ? await getLibraryPublishAccess(session.user.id)
     : { canPublish: false, isAdmin: false, isCurator: false };
-  const { q, tipo, aba, pagina } = await searchParams;
+  const { q, tipo, aba, pagina, interacao } = await searchParams;
 
   const query = q?.trim() ?? "";
   const selectedType: ResourceTypeFilter = isResourceTypeFilter(tipo) ? tipo : "all";
+  const selectedInteraction: InteractionFilter = isInteractionFilter(interacao)
+    ? interacao
+    : "all";
   const tab = aba === "santa-igreja" ? "santa-igreja" : "geral";
   const requestedPage = parsePositivePage(pagina);
+  const viewerUserId = session?.user?.id ?? null;
 
   const buildLibraryHref = (input: {
     tab: "geral" | "santa-igreja";
     type: ResourceTypeFilter;
+    interaction: InteractionFilter;
     query: string;
     page?: number;
   }) => {
@@ -76,6 +88,10 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
 
     if (input.type !== "all") {
       params.set("tipo", input.type);
+    }
+
+    if (input.interaction !== "all") {
+      params.set("interacao", input.interaction);
     }
 
     if (input.query.trim()) {
@@ -108,6 +124,8 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
         type: selectedType !== "all" ? selectedType : undefined,
         section: undefined,
         officialOnly: tab === "santa-igreja",
+        viewerUserId: viewerUserId ?? undefined,
+        interactionFilter: selectedInteraction !== "all" ? selectedInteraction : undefined,
         limit: PUBLICATIONS_PER_PAGE,
         page: requestedPage,
       }),
@@ -166,7 +184,12 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex flex-wrap gap-2">
             <Link
-              href={buildLibraryHref({ tab: "geral", type: selectedType, query })}
+              href={buildLibraryHref({
+                tab: "geral",
+                type: selectedType,
+                interaction: selectedInteraction,
+                query,
+              })}
               className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
                 tab === "geral"
                   ? "bg-[#003366] text-white"
@@ -176,7 +199,12 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
               Biblioteca Geral
             </Link>
             <Link
-              href={buildLibraryHref({ tab: "santa-igreja", type: selectedType, query })}
+              href={buildLibraryHref({
+                tab: "santa-igreja",
+                type: selectedType,
+                interaction: selectedInteraction,
+                query,
+              })}
               className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
                 tab === "santa-igreja"
                   ? "bg-[#003366] text-white"
@@ -193,7 +221,12 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
             {RESOURCE_TYPES.map((item) => (
               <Link
                 key={item.value}
-                href={buildLibraryHref({ tab, type: item.value, query })}
+                href={buildLibraryHref({
+                  tab,
+                  type: item.value,
+                  interaction: selectedInteraction,
+                  query,
+                })}
                 className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
                   selectedType === item.value
                     ? "bg-sky-700 text-white"
@@ -204,11 +237,43 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
               </Link>
             ))}
           </div>
+
+          {viewerUserId ? (
+            <>
+              <div className="h-7 w-px bg-zinc-200" aria-hidden />
+
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: "all", label: "Tudo" },
+                  { value: "bookmarks", label: "Favoritos" },
+                  { value: "likes", label: "Curtidas" },
+                ].map((item) => (
+                  <Link
+                    key={item.value}
+                    href={buildLibraryHref({
+                      tab,
+                      type: selectedType,
+                      interaction: item.value as InteractionFilter,
+                      query,
+                    })}
+                    className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                      selectedInteraction === item.value
+                        ? "bg-amber-600 text-white"
+                        : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </>
+          ) : null}
         </div>
 
         <form action="/biblioteca" className="mt-4 grid gap-3 lg:grid-cols-[2fr,auto]">
           <input type="hidden" name="aba" value={tab} />
           <input type="hidden" name="tipo" value={selectedType} />
+          <input type="hidden" name="interacao" value={selectedInteraction} />
           <label className="sr-only" htmlFor="busca-biblioteca">
             Buscar por conteúdo
           </label>
@@ -301,7 +366,15 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
                 ) : null}
 
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className="text-xs text-zinc-500">{resource.sourceName ?? "Fonte interna"}</span>
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+                    <span>{resource.sourceName ?? "Fonte interna"}</span>
+                    <span className="inline-flex items-center gap-1">
+                      <HeartIcon className="size-3.5" /> {resource.totalLikes}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <MessageSquareIcon className="size-3.5" /> {resource.totalComments}
+                    </span>
+                  </div>
                   <Link
                     href={`/biblioteca/${resource.slug}`}
                     className="text-sm font-semibold text-sky-700 hover:text-sky-900"
@@ -324,6 +397,7 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
                 href={buildLibraryHref({
                   tab,
                   type: selectedType,
+                  interaction: selectedInteraction,
                   query,
                   page: Math.max(1, resources.page - 1),
                 })}
@@ -345,7 +419,13 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
                   <span key={pageNumber} className="flex items-center gap-2">
                     {showGap ? <span className="text-sm text-zinc-400">…</span> : null}
                     <Link
-                      href={buildLibraryHref({ tab, type: selectedType, query, page: pageNumber })}
+                      href={buildLibraryHref({
+                        tab,
+                        type: selectedType,
+                        interaction: selectedInteraction,
+                        query,
+                        page: pageNumber,
+                      })}
                       aria-current={pageNumber === resources.page ? "page" : undefined}
                       className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
                         pageNumber === resources.page
@@ -363,6 +443,7 @@ export default async function BibliotecaPage({ searchParams }: PageProps) {
                 href={buildLibraryHref({
                   tab,
                   type: selectedType,
+                  interaction: selectedInteraction,
                   query,
                   page: Math.min(resources.totalPages, resources.page + 1),
                 })}

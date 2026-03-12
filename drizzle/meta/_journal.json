@@ -113,6 +113,27 @@
       "when": 1772739000000,
       "tag": "0015_confession_sin_type_and_nature",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1773100000000,
+      "tag": "0016_journal_memories_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1773180000000,
+      "tag": "0017_account_personalization",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1773279600000,
+      "tag": "0018_library_resource_interactions",
+      "breakpoints": true
     }
   ]
 }

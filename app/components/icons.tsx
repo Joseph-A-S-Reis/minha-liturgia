@@ -137,3 +137,39 @@ export function CheckCircleIcon(props: IconProps) {
     </BaseIcon>
   );
 }
+
+export function HeartIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M12 20.5s-6.7-4.3-8.6-8C1.8 9.6 2.6 6.4 5.3 5.1c2-1 4.3-.4 5.7 1.4 1.4-1.8 3.7-2.4 5.7-1.4 2.7 1.3 3.5 4.5 1.9 7.4-1.9 3.7-8.6 8-8.6 8Z" />
+    </BaseIcon>
+  );
+}
+
+export function BookmarkIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M6 4.5h12v16l-6-3.8-6 3.8v-16Z" />
+    </BaseIcon>
+  );
+}
+
+export function MessageSquareIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v6A2.5 2.5 0 0 1 16.5 15H10l-4 4v-4H7.5A2.5 2.5 0 0 1 5 12.5v-6Z" />
+    </BaseIcon>
+  );
+}
+
+export function ShareIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="18" cy="5" r="2.5" />
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="19" r="2.5" />
+      <path d="m8.3 10.9 7.4-4.1" />
+      <path d="m8.3 13.1 7.4 4.1" />
+    </BaseIcon>
+  );
+}

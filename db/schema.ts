@@ -17,6 +17,8 @@ export const users = pgTable(
     id: text("id").primaryKey(),
     name: text("name"),
     email: text("email").notNull(),
+    devotionSaint: varchar("devotion_saint", { length: 120 }),
+    communityName: varchar("community_name", { length: 160 }),
     isAdmin: boolean("is_admin").default(false).notNull(),
     isCurator: boolean("is_curator").default(false).notNull(),
     passwordHash: text("password_hash"),
@@ -427,6 +429,8 @@ export const libraryResources = pgTable(
     sourceName: varchar("source_name", { length: 140 }),
     sourceUrl: text("source_url"),
     coverImageUrl: text("cover_image_url"),
+    totalLikes: integer("total_likes").default(0).notNull(),
+    totalComments: integer("total_comments").default(0).notNull(),
     publishedAt: timestamp("published_at", { mode: "date" }),
     createdByUserId: text("created_by_user_id").references(() => users.id, {
       onDelete: "set null",
@@ -448,6 +452,94 @@ export const libraryResources = pgTable(
     officialPublishedIdx: index("library_resources_official_published_idx").on(
       table.isOfficialChurchSource,
       table.publishedAt,
+    ),
+    publishedStatsIdx: index("library_resources_published_stats_idx").on(
+      table.status,
+      table.publishedAt,
+      table.totalLikes,
+      table.totalComments,
+    ),
+  }),
+);
+
+export const libraryResourceBookmarks = pgTable(
+  "library_resource_bookmarks",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    resourceId: text("resource_id")
+      .notNull()
+      .references(() => libraryResources.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userResourceUnique: uniqueIndex("library_resource_bookmarks_user_resource_unique").on(
+      table.userId,
+      table.resourceId,
+    ),
+    userCreatedIdx: index("library_resource_bookmarks_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+    resourceUserIdx: index("library_resource_bookmarks_resource_user_idx").on(
+      table.resourceId,
+      table.userId,
+    ),
+  }),
+);
+
+export const libraryResourceLikes = pgTable(
+  "library_resource_likes",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    resourceId: text("resource_id")
+      .notNull()
+      .references(() => libraryResources.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userResourceUnique: uniqueIndex("library_resource_likes_user_resource_unique").on(
+      table.userId,
+      table.resourceId,
+    ),
+    userCreatedIdx: index("library_resource_likes_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+    resourceUserIdx: index("library_resource_likes_resource_user_idx").on(
+      table.resourceId,
+      table.userId,
+    ),
+  }),
+);
+
+export const libraryResourceComments = pgTable(
+  "library_resource_comments",
+  {
+    id: text("id").primaryKey(),
+    resourceId: text("resource_id")
+      .notNull()
+      .references(() => libraryResources.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => ({
+    resourceCreatedIdx: index("library_resource_comments_resource_created_idx").on(
+      table.resourceId,
+      table.createdAt,
+    ),
+    userUpdatedIdx: index("library_resource_comments_user_updated_idx").on(
+      table.userId,
+      table.updatedAt,
     ),
   }),
 );

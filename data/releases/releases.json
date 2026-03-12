@@ -1,6 +1,68 @@
 {
-  "latest": "0.12.0",
+  "latest": "0.13.0",
   "releases": [
+    {
+      "version": "0.13.0",
+      "releasedAt": "2026-03-12",
+      "title": "Versão 13 — Biblioteca interativa, perfil da conta e editor rico",
+      "highlights": [
+        "Biblioteca agora permite favoritar, curtir, comentar e compartilhar publicações, com filtros pessoais por interação.",
+        "Artigos da Biblioteca ganharam editor rico com Tiptap, alternância entre RTF e HTML e pré-visualização local sanitizada.",
+        "Área Minha Conta foi expandida com foto de perfil, nome público, santo de devoção e comunidade, incluindo upload para GCS."
+      ],
+      "changes": [
+        {
+          "category": "feature",
+          "title": "Interações sociais na Biblioteca",
+          "description": "Publicações da Biblioteca agora aceitam favoritos, curtidas e comentários persistidos em banco, com contadores agregados, idempotência nas mutações e revalidação automática das páginas afetadas."
+        },
+        {
+          "category": "feature",
+          "title": "Barra de interação e compartilhamento nas publicações",
+          "description": "A página individual de cada recurso passou a exibir ações de favoritar, curtir, compartilhar e comentar, com tratamento para autenticação e restrições em conteúdos de própria autoria para curadores e administradores."
+        },
+        {
+          "category": "feature",
+          "title": "Filtros pessoais por favoritos e curtidas na Biblioteca",
+          "description": "Usuários autenticados podem filtrar a listagem pública da Biblioteca por conteúdos favoritados ou curtidos, mantendo busca, abas, tipo e paginação no mesmo fluxo server-side."
+        },
+        {
+          "category": "feature",
+          "title": "Seção de comentários com edição e exclusão",
+          "description": "Foi adicionada uma seção dedicada de comentários com criação, edição e exclusão, incluindo avatar, santo de devoção, comunidade, identificação do autor e regras de permissão por usuário e papéis administrativos."
+        },
+        {
+          "category": "feature",
+          "title": "Nova central de configurações da conta",
+          "description": "A página /conta agora reúne dados de acesso e segurança, atualização de nome público, foto de perfil, santo de devoção e comunidade em uma experiência unificada e mais completa."
+        },
+        {
+          "category": "feature",
+          "title": "Upload de foto de perfil com Google Cloud Storage",
+          "description": "O perfil do usuário passou a aceitar imagem de avatar com validação de formato e tamanho, envio para o bucket configurado no Google Cloud Storage e persistência da URL pública no cadastro."
+        },
+        {
+          "category": "feature",
+          "title": "Editor rico para artigos da Biblioteca",
+          "description": "Autores agora podem editar artigos com Tiptap, usando títulos, listas, citações, links, destaques e outros recursos de formatação, além de alternar entre modo visual e HTML bruto."
+        },
+        {
+          "category": "improvement",
+          "title": "Pré-visualização HTML local reutilizável e sanitizada",
+          "description": "A geração de preview de artigos foi extraída para utilitário compartilhado, removendo elementos inseguros e padronizando a visualização tanto na criação quanto na edição de conteúdos."
+        },
+        {
+          "category": "improvement",
+          "title": "SEO e metadados nas páginas da Biblioteca",
+          "description": "Recursos publicados agora geram metadados dinâmicos com URL canônica, Open Graph e Twitter Cards, melhorando compartilhamento externo e indexação de páginas individuais."
+        },
+        {
+          "category": "improvement",
+          "title": "Expansão do schema para personalização e interações",
+          "description": "O banco recebeu novas colunas em usuários e recursos publicados, além das tabelas de favoritos, curtidas e comentários, acompanhadas de índices e migrações Drizzle para suportar a nova camada social."
+        }
+      ]
+    },
     {
       "version": "0.12.0",
       "releasedAt": "2026-03-10",

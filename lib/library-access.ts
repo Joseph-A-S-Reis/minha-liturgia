@@ -14,6 +14,12 @@ type LibraryResourceAccessInput = {
   access: LibraryPublishAccess;
 };
 
+type LibraryCommentAccessInput = {
+  userId: string;
+  commentUserId: string;
+  access: LibraryPublishAccess;
+};
+
 export async function getLibraryPublishAccess(userId: string): Promise<LibraryPublishAccess> {
   const [user] = await db
     .select({
@@ -65,5 +71,53 @@ export function assertCanManageLibraryResource(input: LibraryResourceAccessInput
     throw new Error(
       "Sem permissão para editar/excluir este conteúdo. Administradores podem gerenciar qualquer publicação; curadores apenas conteúdos próprios.",
     );
+  }
+}
+
+export function canInteractWithLibraryResource(input: LibraryResourceAccessInput): boolean {
+  if (!input.createdByUserId) {
+    return true;
+  }
+
+  if (input.createdByUserId !== input.userId) {
+    return true;
+  }
+
+  return !input.access.isAdmin && !input.access.isCurator;
+}
+
+export function assertCanInteractWithLibraryResource(input: LibraryResourceAccessInput) {
+  if (!canInteractWithLibraryResource(input)) {
+    throw new Error(
+      "Administradores e curadores não podem interagir com conteúdos da própria autoria na Biblioteca.",
+    );
+  }
+}
+
+export function canEditOwnLibraryComment(input: LibraryCommentAccessInput): boolean {
+  if (input.commentUserId === input.userId) {
+    return true;
+  }
+
+  return input.access.isAdmin || input.access.isCurator;
+}
+
+export function assertCanEditOwnLibraryComment(input: LibraryCommentAccessInput) {
+  if (!canEditOwnLibraryComment(input)) {
+    throw new Error("Sem permissão para editar este comentário.");
+  }
+}
+
+export function canDeleteOwnLibraryComment(input: LibraryCommentAccessInput): boolean {
+  if (input.commentUserId === input.userId) {
+    return true;
+  }
+
+  return input.access.isAdmin || input.access.isCurator;
+}
+
+export function assertCanDeleteOwnLibraryComment(input: LibraryCommentAccessInput) {
+  if (!canDeleteOwnLibraryComment(input)) {
+    throw new Error("Sem permissão para excluir este comentário.");
   }
 }

@@ -1,10 +1,18 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { AssetViewer } from "@/app/components/library-asset-viewer";
+import { LibraryCommentsSection } from "@/app/components/library-comments-section";
 import { ConfirmSubmitButton } from "@/app/components/confirm-submit-button";
+import { LibraryInteractionBar } from "@/app/components/library-interaction-bar";
 import { deleteLibraryResourceAction } from "@/app/biblioteca/actions";
-import { canManageLibraryResource, getLibraryPublishAccess } from "@/lib/library-access";
+import {
+  canInteractWithLibraryResource,
+  canManageLibraryResource,
+  getLibraryPublishAccess,
+} from "@/lib/library-access";
+import { buildAbsoluteAppUrl } from "@/lib/app-url";
 import { resolveAssetOpenUrl } from "@/lib/library/media";
 import { getPublishedLibraryResourceBySlug } from "@/lib/library-repository";
 
@@ -18,7 +26,43 @@ function formatDate(value: Date | null) {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: "America/Sao_Paulo",
   }).format(value);
+}
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const resource = await getPublishedLibraryResourceBySlug(slug);
+
+  if (!resource) {
+    return {
+      title: "Conteúdo não encontrado | Minha Liturgia",
+    };
+  }
+
+  const canonicalUrl = buildAbsoluteAppUrl(`/biblioteca/${resource.slug}`);
+  const description = resource.summary ?? "Leia este conteúdo publicado na Biblioteca Católica.";
+
+  return {
+    title: `${resource.title} | Minha Liturgia`,
+    description,
+    alternates: {
+      canonical: canonicalUrl,
+    },
+    openGraph: {
+      type: resource.resourceType === "article" ? "article" : "website",
+      title: resource.title,
+      description,
+      url: canonicalUrl,
+      images: resource.coverImageUrl ? [{ url: resource.coverImageUrl }] : undefined,
+    },
+    twitter: {
+      card: resource.coverImageUrl ? "summary_large_image" : "summary",
+      title: resource.title,
+      description,
+      images: resource.coverImageUrl ? [resource.coverImageUrl] : undefined,
+    },
+  };
 }
 
 export default async function BibliotecaResourcePage({ params }: PageProps) {
@@ -27,7 +71,7 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
   const publishAccess = session?.user?.id
     ? await getLibraryPublishAccess(session.user.id)
     : { canPublish: false, isAdmin: false, isCurator: false };
-  const resource = await getPublishedLibraryResourceBySlug(slug);
+  const resource = await getPublishedLibraryResourceBySlug(slug, session?.user?.id ?? null);
 
   if (!resource) {
     notFound();
@@ -50,6 +94,15 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
       createdByUserId: resource.createdByUserId,
       access: publishAccess,
     });
+  const canInteract =
+    session?.user?.id != null
+      ? canInteractWithLibraryResource({
+          userId: session.user.id,
+          createdByUserId: resource.createdByUserId,
+          access: publishAccess,
+        })
+      : false;
+  const resourceUrl = buildAbsoluteAppUrl(`/biblioteca/${resource.slug}`);
 
   async function handleDeleteResource() {
     "use server";
@@ -130,6 +183,18 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
         </section>
       ) : null}
 
+      <LibraryInteractionBar
+        resourceId={resource.id}
+        resourceTitle={resource.title}
+        resourceUrl={resourceUrl}
+        totalLikes={resource.totalLikes}
+        totalComments={resource.totalComments}
+        isBookmarked={resource.isBookmarked}
+        isLiked={resource.isLiked}
+        canInteract={canInteract}
+        isAuthenticated={Boolean(session?.user?.id)}
+      />
+
       <article
         className={
           isArticle
@@ -205,6 +270,15 @@ export default async function BibliotecaResourcePage({ params }: PageProps) {
           </a>
         </section>
       ) : null}
+
+      <LibraryCommentsSection
+        resourceId={resource.id}
+        comments={resource.comments}
+        sessionUserId={session?.user?.id ?? null}
+        access={publishAccess}
+        canInteract={canInteract}
+        isAuthenticated={Boolean(session?.user?.id)}
+      />
     </main>
   );
 }

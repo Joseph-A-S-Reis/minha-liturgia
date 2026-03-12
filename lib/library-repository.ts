@@ -3,8 +3,11 @@ import { db } from "@/db/client";
 import {
   libraryAssets,
   libraryCategories,
+  libraryResourceBookmarks,
   libraryResourceCategories,
   libraryResourceChunks,
+  libraryResourceComments,
+  libraryResourceLikes,
   libraryResources,
   users,
 } from "@/db/schema";
@@ -27,15 +30,33 @@ export type LibraryResourceCard = {
   sourceName: string | null;
   publishedAt: Date | null;
   createdAt: Date;
+  totalLikes: number;
+  totalComments: number;
+  isBookmarked: boolean;
+  isLiked: boolean;
   authorName: string | null;
   authorEmail: string | null;
   categories: LibraryCategory[];
+};
+
+export type LibraryResourceComment = {
+  id: string;
+  userId: string;
+  content: string;
+  createdAt: Date;
+  updatedAt: Date;
+  authorName: string | null;
+  authorEmail: string | null;
+  authorImage: string | null;
+  authorDevotionSaint: string | null;
+  authorCommunityName: string | null;
 };
 
 export type LibraryResourceDetail = LibraryResourceCard & {
   createdByUserId: string | null;
   contentMarkdown: string | null;
   sourceUrl: string | null;
+  comments: LibraryResourceComment[];
   assets: Array<{
     id: string;
     kind: string;
@@ -52,6 +73,8 @@ type ListResourcesInput = {
   type?: string;
   section?: string;
   officialOnly?: boolean;
+  viewerUserId?: string;
+  interactionFilter?: "bookmarks" | "likes";
   limit?: number;
   page?: number;
 };
@@ -114,8 +137,48 @@ export async function listPublishedLibraryResources(
   const limit = Math.min(Math.max(input.limit ?? 60, 1), 120);
   const requestedPage = Math.max(1, Math.trunc(input.page ?? 1));
   const filteredBySection = input.section?.trim();
+  const viewerUserId = input.viewerUserId?.trim() || null;
 
   const whereClauses = [eq(libraryResources.status, "published")];
+
+  if (input.interactionFilter) {
+    if (!viewerUserId) {
+      return {
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: limit,
+        totalPages: 0,
+      };
+    }
+
+    const interactionRows =
+      input.interactionFilter === "bookmarks"
+        ? await db
+            .select({ resourceId: libraryResourceBookmarks.resourceId })
+            .from(libraryResourceBookmarks)
+            .where(eq(libraryResourceBookmarks.userId, viewerUserId))
+        : await db
+            .select({ resourceId: libraryResourceLikes.resourceId })
+            .from(libraryResourceLikes)
+            .where(eq(libraryResourceLikes.userId, viewerUserId));
+
+    const interactionResourceIds = Array.from(
+      new Set(interactionRows.map((item) => item.resourceId)),
+    );
+
+    if (interactionResourceIds.length === 0) {
+      return {
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: limit,
+        totalPages: 0,
+      };
+    }
+
+    whereClauses.push(inArray(libraryResources.id, interactionResourceIds));
+  }
 
   if (filteredBySection) {
     const sectionMatches = await db
@@ -196,6 +259,8 @@ export async function listPublishedLibraryResources(
       sourceName: libraryResources.sourceName,
       publishedAt: libraryResources.publishedAt,
       createdAt: libraryResources.createdAt,
+      totalLikes: libraryResources.totalLikes,
+      totalComments: libraryResources.totalComments,
       authorName: users.name,
       authorEmail: users.email,
     })
@@ -218,19 +283,45 @@ export async function listPublishedLibraryResources(
 
   const resourceIds = resources.map((item) => item.id);
 
-  const categoryRows = await db
-    .select({
-      resourceId: libraryResourceCategories.resourceId,
-      id: libraryCategories.id,
-      slug: libraryCategories.slug,
-      name: libraryCategories.name,
-      section: libraryCategories.section,
-    })
-    .from(libraryResourceCategories)
-    .innerJoin(libraryCategories, eq(libraryCategories.id, libraryResourceCategories.categoryId))
-    .where(inArray(libraryResourceCategories.resourceId, resourceIds));
+  const [categoryRows, bookmarkRows, likeRows] = await Promise.all([
+    db
+      .select({
+        resourceId: libraryResourceCategories.resourceId,
+        id: libraryCategories.id,
+        slug: libraryCategories.slug,
+        name: libraryCategories.name,
+        section: libraryCategories.section,
+      })
+      .from(libraryResourceCategories)
+      .innerJoin(libraryCategories, eq(libraryCategories.id, libraryResourceCategories.categoryId))
+      .where(inArray(libraryResourceCategories.resourceId, resourceIds)),
+    viewerUserId
+      ? db
+          .select({ resourceId: libraryResourceBookmarks.resourceId })
+          .from(libraryResourceBookmarks)
+          .where(
+            and(
+              eq(libraryResourceBookmarks.userId, viewerUserId),
+              inArray(libraryResourceBookmarks.resourceId, resourceIds),
+            ),
+          )
+      : Promise.resolve([]),
+    viewerUserId
+      ? db
+          .select({ resourceId: libraryResourceLikes.resourceId })
+          .from(libraryResourceLikes)
+          .where(
+            and(
+              eq(libraryResourceLikes.userId, viewerUserId),
+              inArray(libraryResourceLikes.resourceId, resourceIds),
+            ),
+          )
+      : Promise.resolve([]),
+  ]);
 
   const categoryMap = new Map<string, LibraryCategory[]>();
+  const bookmarkedResourceIds = new Set(bookmarkRows.map((row) => row.resourceId));
+  const likedResourceIds = new Set(likeRows.map((row) => row.resourceId));
 
   for (const row of categoryRows) {
     const previous = categoryMap.get(row.resourceId) ?? [];
@@ -246,6 +337,10 @@ export async function listPublishedLibraryResources(
   const items = resources
     .map<LibraryResourceCard>((resource) => ({
       ...resource,
+      totalLikes: Number(resource.totalLikes ?? 0),
+      totalComments: Number(resource.totalComments ?? 0),
+      isBookmarked: bookmarkedResourceIds.has(resource.id),
+      isLiked: likedResourceIds.has(resource.id),
       categories: categoryMap.get(resource.id) ?? [],
     }));
 
@@ -260,6 +355,7 @@ export async function listPublishedLibraryResources(
 
 export async function getPublishedLibraryResourceBySlug(
   slug: string,
+  viewerUserId?: string | null,
 ): Promise<LibraryResourceDetail | null> {
   const [resource] = await db
     .select({
@@ -276,6 +372,8 @@ export async function getPublishedLibraryResourceBySlug(
       contentMarkdown: libraryResources.contentMarkdown,
       publishedAt: libraryResources.publishedAt,
       createdAt: libraryResources.createdAt,
+      totalLikes: libraryResources.totalLikes,
+      totalComments: libraryResources.totalComments,
       authorName: users.name,
       authorEmail: users.email,
     })
@@ -288,7 +386,9 @@ export async function getPublishedLibraryResourceBySlug(
     return null;
   }
 
-  const [categories, assets] = await Promise.all([
+  const normalizedViewerUserId = viewerUserId?.trim() || null;
+
+  const [categories, assets, comments, bookmarkRows, likeRows] = await Promise.all([
     db
       .select({
         id: libraryCategories.id,
@@ -312,11 +412,55 @@ export async function getPublishedLibraryResourceBySlug(
       .from(libraryAssets)
       .where(eq(libraryAssets.resourceId, resource.id))
       .orderBy(libraryAssets.createdAt),
+    db
+      .select({
+        id: libraryResourceComments.id,
+        userId: libraryResourceComments.userId,
+        content: libraryResourceComments.content,
+        createdAt: libraryResourceComments.createdAt,
+        updatedAt: libraryResourceComments.updatedAt,
+        authorName: users.name,
+        authorEmail: users.email,
+        authorImage: users.image,
+        authorDevotionSaint: users.devotionSaint,
+        authorCommunityName: users.communityName,
+      })
+      .from(libraryResourceComments)
+      .innerJoin(users, eq(users.id, libraryResourceComments.userId))
+      .where(eq(libraryResourceComments.resourceId, resource.id))
+      .orderBy(desc(libraryResourceComments.createdAt)),
+    normalizedViewerUserId
+      ? db
+          .select({ resourceId: libraryResourceBookmarks.resourceId })
+          .from(libraryResourceBookmarks)
+          .where(
+            and(
+              eq(libraryResourceBookmarks.userId, normalizedViewerUserId),
+              eq(libraryResourceBookmarks.resourceId, resource.id),
+            ),
+          )
+      : Promise.resolve([]),
+    normalizedViewerUserId
+      ? db
+          .select({ resourceId: libraryResourceLikes.resourceId })
+          .from(libraryResourceLikes)
+          .where(
+            and(
+              eq(libraryResourceLikes.userId, normalizedViewerUserId),
+              eq(libraryResourceLikes.resourceId, resource.id),
+            ),
+          )
+      : Promise.resolve([]),
   ]);
 
   return {
     ...resource,
+    totalLikes: Number(resource.totalLikes ?? 0),
+    totalComments: Number(resource.totalComments ?? 0),
+    isBookmarked: bookmarkRows.length > 0,
+    isLiked: likeRows.length > 0,
     categories,
+    comments,
     assets,
   };
 }
