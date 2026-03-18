@@ -3,6 +3,7 @@ import {
   BookIcon,
   CalendarIcon,
   HomeIcon,
+  InfoIcon,
   LibraryIcon,
   PenIcon,
   SparkIcon,
@@ -35,6 +36,7 @@ export const navigationItems: NavigationItem[] = [
   { href: "/biblioteca", label: "Biblioteca", icon: LibraryIcon },
   { href: "/diario", label: "Diário", icon: PenIcon },
   { href: "/calendario", label: "Calendário", icon: CalendarIcon },
+  { href: "/sobre", label: "Sobre", icon: InfoIcon },
   { href: "/conta", label: "Conta", icon: UserIcon, activeMatchers: AUTH_MATCHERS },
 ];
 

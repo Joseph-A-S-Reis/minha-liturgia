@@ -1,6 +1,58 @@
 {
-  "latest": "0.13.0",
+  "latest": "0.14.0",
   "releases": [
+    {
+      "version": "0.14.0",
+      "releasedAt": "2026-03-18",
+      "title": "Versão 14 — Página Sobre, doações públicas e mídia rica na Biblioteca",
+      "highlights": [
+        "O editor de artigos da Biblioteca agora incorpora imagens e vídeos por URL, cola, arrastar/soltar e upload direto para o Google Cloud Storage.",
+        "A nova página Sobre apresenta a história e o propósito do projeto, reúne opções de doação voluntária e oferece contato direto por e-mail.",
+        "Uma página pública de doações e a navegação ampliada com a área Sobre reforçam a transparência e a apresentação institucional do app."
+      ],
+      "changes": [
+        {
+          "category": "feature",
+          "title": "Editor rico da Biblioteca consolidado em componente reutilizável",
+          "description": "Os formulários de criação e edição de artigos passaram a compartilhar um único componente de editor rico, centralizando toolbar, alternância entre RTF e HTML e a pré-visualização sanitizada do conteúdo."
+        },
+        {
+          "category": "feature",
+          "title": "Incorporação de imagens e vídeos no editor de artigos",
+          "description": "Autores agora podem inserir imagens, vídeos diretos e players embutidos do YouTube ou Vimeo no corpo do artigo a partir de URLs, cola de links e interações de arrastar e soltar."
+        },
+        {
+          "category": "feature",
+          "title": "Upload inline de mídia para artigos via Google Cloud Storage",
+          "description": "Foi criada a rota /api/biblioteca/articles/media-upload para validar arquivos de imagem e vídeo, enviar binários para o bucket configurado e devolver URLs públicas prontas para inserção imediata no editor."
+        },
+        {
+          "category": "improvement",
+          "title": "Sanitização e preview HTML com suporte multimídia",
+          "description": "A renderização local de prévia passou a tratar imagens, vídeos e iframes com estilos dedicados, removendo atributos inseguros e aceitando apenas URLs seguras em href, src e poster."
+        },
+        {
+          "category": "feature",
+          "title": "Nova página Sobre com apresentação institucional",
+          "description": "O app ganhou a rota /sobre com seções sobre o criador, a missão do Minha Liturgia, contexto pastoral do projeto e blocos visuais para leitura simples em desktop e mobile."
+        },
+        {
+          "category": "feature",
+          "title": "Formulário de contato direto na página Sobre",
+          "description": "Usuários agora podem enviar mensagens, sugestões e correções por um formulário validado com Zod, que encaminha o conteúdo por e-mail usando CONTACT_EMAIL_TO como destinatário de ambiente."
+        },
+        {
+          "category": "feature",
+          "title": "Página pública para registro de doações",
+          "description": "Foi adicionada a rota /doacoes para listar publicamente contribuições registradas, com visualização responsiva em cards e tabela e integração com os conteúdos institucionais da página Sobre."
+        },
+        {
+          "category": "improvement",
+          "title": "Navegação expandida com acesso à área Sobre",
+          "description": "A navegação principal e a barra mobile passaram a expor a seção Sobre com novo ícone informativo, facilitando o acesso aos detalhes do projeto e às informações de doação."
+        }
+      ]
+    },
     {
       "version": "0.13.0",
       "releasedAt": "2026-03-12",

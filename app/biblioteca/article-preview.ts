@@ -108,9 +108,19 @@ const PREVIEW_BASE_STYLES = `
     display: block;
     max-width: 100%;
     width: 100%;
-    height: auto;
     margin: 1rem 0;
     border-radius: 0.5rem;
+  }
+
+  .library-html-content img {
+    height: auto;
+  }
+
+  .library-html-content video,
+  .library-html-content iframe {
+    aspect-ratio: 16 / 9;
+    min-height: 18rem;
+    background: #020617;
   }
 
   .library-html-content audio {
@@ -161,6 +171,7 @@ export function buildLocalHtmlPreviewDocument(rawHtml: string) {
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(rawHtml, "text/html");
+    const safeUrlPattern = /^(https?:|mailto:|tel:|\/|#)/i;
 
     doc
       .querySelectorAll(
@@ -171,8 +182,14 @@ export function buildLocalHtmlPreviewDocument(rawHtml: string) {
     doc.querySelectorAll("*").forEach((element) => {
       for (const attr of Array.from(element.attributes)) {
         const key = attr.name.toLowerCase();
+        const value = attr.value.trim();
 
         if (key === "style" || key === "class" || key === "id" || key.startsWith("on")) {
+          element.removeAttribute(attr.name);
+          continue;
+        }
+
+        if (["href", "src", "poster"].includes(key) && value && !safeUrlPattern.test(value)) {
           element.removeAttribute(attr.name);
         }
       }

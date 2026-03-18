@@ -11,6 +11,7 @@ const compactLabels: Record<string, string> = {
   "/biblioteca": "Acervo",
   "/diario": "Diário",
   "/calendario": "Agenda",
+  "/sobre": "Sobre",
   "/conta": "Conta",
 };
 

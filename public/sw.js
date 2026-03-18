@@ -1,5 +1,5 @@
-const SHELL_CACHE = "minha-liturgia-shell-v4";
-const RUNTIME_CACHE = "minha-liturgia-runtime-v4";
+const SHELL_CACHE = "minha-liturgia-shell-v5";
+const RUNTIME_CACHE = "minha-liturgia-runtime-v5";
 const OFFLINE_FALLBACK_URL = "/offline.html";
 
 const SHELL_ROUTES = [

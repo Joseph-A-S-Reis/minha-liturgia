@@ -119,9 +119,19 @@ a {
   display: block;
   max-width: 100%;
   width: 100%;
-  height: auto;
   margin: 1rem 0;
   border-radius: 0.5rem;
+}
+
+.library-html-content img {
+  height: auto;
+}
+
+.library-html-content video,
+.library-html-content iframe {
+  aspect-ratio: 16 / 9;
+  min-height: 18rem;
+  background: #020617;
 }
 
 .library-html-content audio {

@@ -162,6 +162,16 @@ export function MessageSquareIcon(props: IconProps) {
   );
 }
 
+export function InfoIcon(props: IconProps) {
+  return (
+    <BaseIcon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 10.5v5" />
+      <path d="M12 7.5h.01" />
+    </BaseIcon>
+  );
+}
+
 export function ShareIcon(props: IconProps) {
   return (
     <BaseIcon {...props}>
